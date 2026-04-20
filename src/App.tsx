@@ -311,6 +311,47 @@ export default function App() {
     };
   }, []);
 
+  // Preserve the user's scroll position across the listening toggle.
+  // The Stage swap (FullStage ⇄ FocusStrip) and the transcript editor's
+  // min-height change combine to shift document height by hundreds of
+  // pixels. Without this, when dictation finishes the user's viewport
+  // appears to "jump to the top" because the content above the transcript
+  // grew. Browser scroll-anchoring should compensate, but Motion's
+  // transform-based entry breaks anchor detection. We capture scrollY +
+  // documentHeight on each toggle, and after the animation settles
+  // (~620ms) we adjust scroll by the height delta so the user keeps
+  // looking at the same content they were before.
+  const scrollPreserveRef = useRef({ y: 0, h: 0 });
+  const scrollPreserveTimerRef = useRef<number | null>(null);
+  useEffect(() => {
+    const startY = window.scrollY;
+    const startH = document.documentElement.scrollHeight;
+    scrollPreserveRef.current = { y: startY, h: startH };
+
+    if (scrollPreserveTimerRef.current !== null) {
+      window.clearTimeout(scrollPreserveTimerRef.current);
+    }
+    scrollPreserveTimerRef.current = window.setTimeout(() => {
+      scrollPreserveTimerRef.current = null;
+      // Skip if user was already at the top — they meant to be there.
+      if (startY <= 4) return;
+      const endH = document.documentElement.scrollHeight;
+      const delta = endH - startH;
+      if (Math.abs(delta) < 8) return;
+      const target = Math.max(0, startY + delta);
+      // Skip if the browser already adjusted scroll (anchoring worked).
+      if (Math.abs(window.scrollY - target) < 8) return;
+      window.scrollTo({ top: target, behavior: "auto" });
+    }, 620);
+
+    return () => {
+      if (scrollPreserveTimerRef.current !== null) {
+        window.clearTimeout(scrollPreserveTimerRef.current);
+        scrollPreserveTimerRef.current = null;
+      }
+    };
+  }, [listening]);
+
   useEffect(() => {
     if (listening && !wasListeningRef.current) {
       liveTranslateSessionRef.current += 1;
