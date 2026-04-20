@@ -229,6 +229,17 @@ export const TranscriptPanel = memo(
         captureInsertionAnchor() {
           const range = resolveInsertionRange();
           dictationAnchorRef.current = range ? range.cloneRange() : null;
+          removeAnchoredPreview();
+          if (!dictationAnchorRef.current) {
+            setTailPreviewVisible(true);
+            return;
+          }
+          // Show the AI caret at the anchored cursor immediately on hold-start,
+          // before interim/final packets arrive, so there is no tail->anchor jump.
+          setTailPreviewVisible(false);
+          const { caretNode } = getAnchoredPreviewNodes();
+          const caretRange = dictationAnchorRef.current.cloneRange();
+          caretRange.insertNode(caretNode);
         },
         releaseInsertionAnchor() {
           dictationAnchorRef.current = null;
