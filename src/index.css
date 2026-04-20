@@ -76,10 +76,12 @@ body {
 }
 
 /* ---------- Ambient background (z:0) — warm editorial light ---------- */
-/* Two soft, heavily-blurred orbs drifting on a 90s cycle. Sits BELOW the
-   paper grain. Palette-safe: orbs are mixes of the brand accent into paper
-   tones, so they never introduce foreign hues. Reacts subtly to listening
-   state via body.is-listening. Respects prefers-reduced-motion. */
+/* Three soft, heavily-blurred orbs drifting on asynchronous paths. Sits
+   BELOW the paper grain. Palette-safe: every orb is a mix of the brand
+   accent into a paper tone, so no foreign hues enter the page. The orbs
+   move on a 110s master cycle with staggered bezier motion so the field
+   feels organic (liquid) rather than mechanically panning. Low peak
+   opacity so it never competes with text. */
 
 body::after {
   content: "";
@@ -90,22 +92,27 @@ body::after {
   opacity: 0;
   background:
     radial-gradient(
-      62vmax 62vmax at 22% 24%,
-      color-mix(in oklch, var(--color-accent) 34%, var(--color-paper)) 0%,
+      44vmax 48vmax at 22% 22%,
+      color-mix(in oklch, var(--color-accent) 38%, var(--color-paper)) 0%,
       transparent 58%
     ),
     radial-gradient(
-      58vmax 58vmax at 78% 74%,
-      color-mix(in oklch, var(--color-accent) 20%, var(--color-paper-2)) 0%,
+      40vmax 42vmax at 78% 76%,
+      color-mix(in oklch, var(--color-accent) 24%, var(--color-paper-2)) 0%,
+      transparent 60%
+    ),
+    radial-gradient(
+      32vmax 36vmax at 48% 58%,
+      color-mix(in oklch, var(--color-accent) 14%, var(--color-paper-3)) 0%,
       transparent 62%
     );
-  background-size: 130% 130%, 130% 130%;
-  background-position: 0% 0%, 100% 100%;
-  filter: blur(52px) saturate(1.05);
+  background-size: 140% 140%, 140% 140%, 140% 140%;
+  background-position: 0% 0%, 100% 100%, 50% 50%;
+  filter: blur(46px) saturate(1.05);
   transform: scale(1);
   animation:
     ambientEntrance 900ms cubic-bezier(0.16, 1, 0.3, 1) 80ms forwards,
-    ambientDrift 90s ease-in-out 1000ms infinite alternate;
+    ambientDrift 110s cubic-bezier(0.42, 0.1, 0.5, 0.9) 1000ms infinite alternate;
   transition:
     filter 900ms cubic-bezier(0.22, 1, 0.36, 1),
     transform 900ms cubic-bezier(0.22, 1, 0.36, 1);
@@ -114,13 +121,15 @@ body::after {
 
 @keyframes ambientEntrance {
   from { opacity: 0; }
-  to   { opacity: 0.88; }
+  to   { opacity: 0.68; }
 }
 
 @keyframes ambientDrift {
-  0%   { background-position:  0% 0%, 100% 100%; }
-  50%  { background-position:  6% -4%,  94% 104%; }
-  100% { background-position: -4% 6%,  104%  94%; }
+  0%   { background-position:   0% 0%,   100% 100%,  50% 50%; }
+  25%  { background-position:   7% -5%,   93% 106%,  58% 42%; }
+  50%  { background-position:  -3% 9%,  106%  94%,  43% 57%; }
+  75%  { background-position:   5% -7%,  94% 109%,  54% 44%; }
+  100% { background-position:  -6% 4%,  108%  91%,  45% 55%; }
 }
 
 body.is-listening::after {
@@ -223,53 +232,63 @@ body.is-listening .editor-listening-rail::before {
   }
 }
 
-/* Dark-mode ambient — deeper amber + rust on ink */
+/* Dark-mode ambient — deeper amber + rust-on-ink, same three-orb field */
 [data-theme="dark"] body::after {
   background:
     radial-gradient(
-      62vmax 62vmax at 22% 24%,
-      color-mix(in oklch, var(--color-accent) 30%, var(--color-paper-2)) 0%,
+      44vmax 48vmax at 22% 22%,
+      color-mix(in oklch, var(--color-accent) 34%, var(--color-paper-2)) 0%,
       transparent 55%
     ),
     radial-gradient(
-      58vmax 58vmax at 78% 74%,
-      color-mix(in oklch, #8c3b1c 40%, var(--color-paper)) 0%,
+      40vmax 42vmax at 78% 76%,
+      color-mix(in oklch, #8c3b1c 44%, var(--color-paper)) 0%,
       transparent 60%
+    ),
+    radial-gradient(
+      32vmax 36vmax at 48% 58%,
+      color-mix(in oklch, var(--color-accent) 18%, var(--color-paper-3)) 0%,
+      transparent 62%
     );
-  filter: blur(56px) saturate(1.08);
+  filter: blur(50px) saturate(1.08);
 }
 [data-theme="dark"] body.is-listening::after {
-  filter: blur(50px) saturate(1.14);
+  filter: blur(44px) saturate(1.14);
 }
 @keyframes ambientEntranceDark {
   from { opacity: 0; }
-  to   { opacity: 0.7; }
+  to   { opacity: 0.54; }
 }
 [data-theme="dark"] body::after {
   animation:
     ambientEntranceDark 900ms cubic-bezier(0.16, 1, 0.3, 1) 80ms forwards,
-    ambientDrift 90s ease-in-out 1000ms infinite alternate;
+    ambientDrift 110s cubic-bezier(0.42, 0.1, 0.5, 0.9) 1000ms infinite alternate;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) body::after {
     background:
       radial-gradient(
-        62vmax 62vmax at 22% 24%,
-        color-mix(in oklch, var(--color-accent) 30%, var(--color-paper-2)) 0%,
+        44vmax 48vmax at 22% 22%,
+        color-mix(in oklch, var(--color-accent) 34%, var(--color-paper-2)) 0%,
         transparent 55%
       ),
       radial-gradient(
-        58vmax 58vmax at 78% 74%,
-        color-mix(in oklch, #8c3b1c 40%, var(--color-paper)) 0%,
+        40vmax 42vmax at 78% 76%,
+        color-mix(in oklch, #8c3b1c 44%, var(--color-paper)) 0%,
         transparent 60%
+      ),
+      radial-gradient(
+        32vmax 36vmax at 48% 58%,
+        color-mix(in oklch, var(--color-accent) 18%, var(--color-paper-3)) 0%,
+        transparent 62%
       );
-    filter: blur(56px) saturate(1.08);
+    filter: blur(50px) saturate(1.08);
     animation:
       ambientEntranceDark 900ms cubic-bezier(0.16, 1, 0.3, 1) 80ms forwards,
-      ambientDrift 90s ease-in-out 1000ms infinite alternate;
+      ambientDrift 110s cubic-bezier(0.42, 0.1, 0.5, 0.9) 1000ms infinite alternate;
   }
   :root:not([data-theme]) body.is-listening::after {
-    filter: blur(50px) saturate(1.14);
+    filter: blur(44px) saturate(1.14);
   }
 }
 
