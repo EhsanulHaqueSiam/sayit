@@ -222,6 +222,10 @@ export default function App() {
     [push],
   );
   const handleAutoEnd = useCallback(() => {
+    const trailingInterim = interimRef.current.trim();
+    if (trailingInterim) {
+      transcriptApiRef.current?.appendFinal(trailingInterim);
+    }
     transcriptApiRef.current?.clearInterim();
     interimRef.current = "";
     clearLiveTranslateTimer();
