@@ -21,6 +21,7 @@ import type { PresetKey, Settings, Theme } from "@/types";
 const THEME_ORDER: Theme[] = ["", "dark", "light"];
 const NOTICE_DISMISSED_KEY = "sayit.unsupported-dismissed.v1";
 const LIVE_TRANSLATE_DEBOUNCE_MS = 180;
+const SPACE_HOLD_TO_TALK_MS = 140;
 
 interface RunAIOptions {
   promptForTranslateTarget?: boolean;
@@ -292,14 +293,55 @@ export default function App() {
   // Space right after picking a language still works. Also enabled over
   // contenteditable so cursor-position dictation works while editing text.
   const spaceHeldRef = useRef(false);
+  const spaceArmTimerRef = useRef<number | null>(null);
+  const spaceFromEditableRef = useRef(false);
   const [spaceHeld, setSpaceHeld] = useState(false);
+
+  const clearSpaceArmTimer = useCallback(() => {
+    if (spaceArmTimerRef.current !== null) {
+      window.clearTimeout(spaceArmTimerRef.current);
+      spaceArmTimerRef.current = null;
+    }
+  }, []);
+
+  const insertSpaceIntoActiveEditor = useCallback(() => {
+    const active = document.activeElement;
+    if (!(active instanceof HTMLElement) || !active.isContentEditable) return;
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return;
+    const range = selection.getRangeAt(0);
+    range.deleteContents();
+    const node = document.createTextNode(" ");
+    range.insertNode(node);
+    const after = document.createRange();
+    after.setStartAfter(node);
+    after.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(after);
+    active.dispatchEvent(new Event("input", { bubbles: true }));
+  }, []);
 
   useHotkeys(
     "space",
     (e) => {
-      e.preventDefault();
       if (!canDictate) return;
+      const target = e.target;
+      const fromEditable = target instanceof HTMLElement && target.isContentEditable;
+      if (fromEditable) {
+        e.preventDefault();
+        if (spaceHeldRef.current || listening || spaceArmTimerRef.current !== null) return;
+        spaceFromEditableRef.current = true;
+        spaceArmTimerRef.current = window.setTimeout(() => {
+          spaceArmTimerRef.current = null;
+          if (spaceHeldRef.current || listening) return;
+          spaceHeldRef.current = true;
+          setSpaceHeld(true);
+          start();
+        }, SPACE_HOLD_TO_TALK_MS);
+        return;
+      }
       if (!listening && !spaceHeldRef.current) {
+        e.preventDefault();
         spaceHeldRef.current = true;
         setSpaceHeld(true);
         start();
@@ -318,11 +360,18 @@ export default function App() {
   useHotkeys(
     "space",
     () => {
+      if (spaceArmTimerRef.current !== null) {
+        clearSpaceArmTimer();
+        if (spaceFromEditableRef.current) insertSpaceIntoActiveEditor();
+        spaceFromEditableRef.current = false;
+        return;
+      }
       if (spaceHeldRef.current) {
         spaceHeldRef.current = false;
         setSpaceHeld(false);
         stop();
       }
+      spaceFromEditableRef.current = false;
     },
     {
       keydown: false,
@@ -330,7 +379,7 @@ export default function App() {
       enableOnFormTags: ["select"],
       enableOnContentEditable: true,
     },
-    [stop],
+    [clearSpaceArmTimer, insertSpaceIntoActiveEditor, stop],
   );
 
   useHotkeys(
@@ -343,6 +392,8 @@ export default function App() {
   // If the window loses focus mid-hold (alt-tab, etc.), clear state.
   useEffect(() => {
     const blur = () => {
+      clearSpaceArmTimer();
+      spaceFromEditableRef.current = false;
       if (spaceHeldRef.current) {
         spaceHeldRef.current = false;
         setSpaceHeld(false);
@@ -351,7 +402,9 @@ export default function App() {
     };
     window.addEventListener("blur", blur);
     return () => window.removeEventListener("blur", blur);
-  }, [stop]);
+  }, [clearSpaceArmTimer, stop]);
+
+  useEffect(() => clearSpaceArmTimer, [clearSpaceArmTimer]);
 
   // ---- Actions ----
   const copyTarget = async (kind: "raw" | "ai") => {
