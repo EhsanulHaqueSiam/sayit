@@ -259,6 +259,15 @@ export default function App() {
   const { elapsed, reset: resetTimer } = useListenTimer(listening);
   const meter = useAudioMeter(listening && canDictate);
 
+  // Listening → body.is-listening, so the ambient background and any
+  // ancestor-scoped listening styles share a single source of truth.
+  useEffect(() => {
+    document.body.classList.toggle("is-listening", listening);
+    return () => {
+      document.body.classList.remove("is-listening");
+    };
+  }, [listening]);
+
   useEffect(() => {
     if (listening && !wasListeningRef.current) {
       liveTranslateSessionRef.current += 1;
@@ -478,6 +487,7 @@ export default function App() {
         }
         onCycleTheme={cycleTheme}
         onOpenSettings={() => setSettingsOpen(true)}
+        className="enter enter--topbar"
       />
 
       {!canDictate && !noticeDismissed && (
@@ -512,7 +522,7 @@ export default function App() {
         />
 
         <section
-          className={`grid gap-6 ${
+          className={`enter enter--panels grid gap-6 ${
             settings.mode === "ai" ? "lg:grid-cols-2" : ""
           }`}
         >
@@ -547,7 +557,7 @@ export default function App() {
       </main>
 
       <footer
-        className="py-6 border-t border-[var(--color-line-soft)]
+        className="enter enter--footer py-6 border-t border-[var(--color-line-soft)]
                    text-center font-mono text-[11px] tracking-[0.2em]
                    uppercase text-[var(--color-ink-faint)]"
       >

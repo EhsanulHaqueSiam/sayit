@@ -8,6 +8,7 @@ interface Props {
   onToggleMode: () => void;
   onCycleTheme: () => void;
   onOpenSettings: () => void;
+  className?: string;
 }
 
 export function Topbar({
@@ -16,13 +17,14 @@ export function Topbar({
   onToggleMode,
   onCycleTheme,
   onOpenSettings,
+  className = "",
 }: Props) {
   return (
     <header
-      className="sticky top-0 z-20 flex items-center justify-between
+      className={`sticky top-0 z-20 flex items-center justify-between
                  px-6 md:px-10 py-5 border-b border-[var(--color-line-soft)]
                  bg-[color-mix(in_srgb,var(--color-paper)_82%,transparent)]
-                 backdrop-blur-md"
+                 backdrop-blur-md ${className}`}
     >
       <a
         href="/"

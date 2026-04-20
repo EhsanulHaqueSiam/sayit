@@ -1,4 +1,5 @@
-import { motion } from "motion/react";
+import { useEffect, useRef } from "react";
+import { motion, useReducedMotion } from "motion/react";
 import { Mic } from "lucide-react";
 import { Keycap } from "./Keycap";
 import type { Mode } from "@/types";
@@ -65,13 +66,13 @@ export function Stage({
       />
 
       {/* Pre-title — the annotation that makes Say. legibly interactive.
-          Breathes gently up/down so the eye is drawn to it. */}
+          Outer wrapper handles page-load entrance; inner motion handles the
+          idle bobbing so the two transforms don't fight. */}
+      <div className="enter enter--pre-title relative z-10 mb-3 md:mb-5" aria-hidden>
       <motion.div
-        className="relative z-10 mb-3 md:mb-5 flex items-center gap-2
-                   text-[var(--color-ink-faint)]"
+        className="flex items-center gap-2 text-[var(--color-ink-faint)]"
         animate={canDictate && !listening ? { y: [0, -3, 0] } : { y: 0 }}
         transition={{ duration: 2.6, repeat: Infinity, ease: "easeInOut" }}
-        aria-hidden
       >
         <Mic size={14} strokeWidth={1.6} />
         <span className="font-display italic text-[15px] md:text-[17px] tracking-[0.01em]">
@@ -101,8 +102,11 @@ export function Stage({
           />
         </svg>
       </motion.div>
+      </div>
 
-      {/* Wordmark as the button */}
+      {/* Wordmark as the button — wrapped in a static div so the page-load
+          entrance (transform animation) doesn't fight Motion's scale. */}
+      <div className="enter enter--wordmark relative z-10">
       <motion.button
         onClick={onToggle}
         initial={false}
@@ -113,7 +117,7 @@ export function Stage({
         aria-pressed={listening}
         aria-label={listening ? "Stop dictation" : "Start dictation"}
         disabled={!canDictate}
-        className="group relative z-10 bg-transparent cursor-pointer
+        className="group relative bg-transparent cursor-pointer
                    text-[var(--color-ink)] px-6 py-3 rounded-[24px]
                    border border-transparent
                    hover:border-[color-mix(in_srgb,var(--color-ink-faint)_55%,transparent)]
@@ -124,7 +128,22 @@ export function Stage({
                    disabled:cursor-not-allowed disabled:opacity-40
                    transition-[border-color] duration-200"
       >
-        <span className="wordmark wordmark-pulse block text-[clamp(120px,21vw,252px)]">
+        {/* Wordmark text — fades out into blur when listening starts, returns
+            with an inkBleed-like ease-out-expo reveal on release. */}
+        <motion.span
+          className="wordmark wordmark-pulse block text-[clamp(120px,21vw,252px)]"
+          initial={false}
+          animate={
+            listening
+              ? { opacity: 0, filter: "blur(4px)", letterSpacing: "-0.02em" }
+              : { opacity: 1, filter: "blur(0px)", letterSpacing: "-0.04em" }
+          }
+          transition={
+            listening
+              ? { duration: 0.14, ease: [0.22, 1, 0.36, 1] }
+              : { duration: 0.36, ease: [0.16, 1, 0.3, 1], delay: 0.16 }
+          }
+        >
           Say
           <span
             className="text-[var(--color-accent)] not-italic inline-block
@@ -133,18 +152,24 @@ export function Stage({
           >
             .
           </span>
-        </span>
+        </motion.span>
+
+        {/* Live audio-wave overlay — emerges from center on listening start */}
+        <WordmarkWave meter={meter} active={listening} />
 
         {/* Always-visible dotted underline that brightens on hover —
-            the tap-affordance users missed. */}
-        <span
+            the tap-affordance users missed. Hides during listening to give
+            the wave full stage. */}
+        <motion.span
           aria-hidden
           className="absolute left-8 right-8 bottom-1 h-[2px]
                      bg-transparent
                      bg-[repeating-linear-gradient(to_right,var(--color-ink-faint)_0_3px,transparent_3px_7px)]
-                     opacity-35
-                     group-hover:opacity-75 group-hover:bg-[repeating-linear-gradient(to_right,var(--color-accent)_0_3px,transparent_3px_7px)]
-                     transition-opacity duration-200"
+                     group-hover:bg-[repeating-linear-gradient(to_right,var(--color-accent)_0_3px,transparent_3px_7px)]"
+          initial={false}
+          animate={{ opacity: listening ? 0 : 0.35 }}
+          whileHover={listening ? undefined : { opacity: 0.75 }}
+          transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
         />
 
         {/* Sweep bar — only visible while actively listening */}
@@ -158,14 +183,15 @@ export function Stage({
           }}
         />
       </motion.button>
+      </div>
 
       {/* Ornament */}
-      <div className="ornament mt-4 mb-5 w-full max-w-[520px] px-4">
+      <div className="enter enter--ornament ornament mt-4 mb-5 w-full max-w-[520px] px-4">
         <span aria-hidden>§</span>
       </div>
 
       {/* Space keycap — secondary affordance */}
-      <div className="flex items-center gap-4 flex-wrap justify-center">
+      <div className="enter enter--keycap flex items-center gap-4 flex-wrap justify-center">
         <span className="side-note text-[17px]">or hold</span>
         <Keycap
           pressed={listening || spaceHeld}
@@ -178,7 +204,7 @@ export function Stage({
 
       {/* Status line */}
       <div
-        className="mt-7 flex items-center gap-3 text-[11px] tracking-[0.24em]
+        className="enter enter--status mt-7 flex items-center gap-3 text-[11px] tracking-[0.24em]
                    uppercase font-mono text-[var(--color-ink-faint)]"
       >
         <span
@@ -203,5 +229,97 @@ export function Stage({
         </p>
       )}
     </section>
+  );
+}
+
+/**
+ * Signature interaction — the audio-wave morph.
+ *
+ * Seven accent-colored bars layered over the wordmark. When `active` becomes
+ * true, bars emerge from center outward (staggered 24ms per step, 280ms ease-
+ * out-expo). While active, each bar's scaleY is written directly by the audio
+ * meter — zero React renders. On release, bars collapse center-out in reverse
+ * (220ms ease-out-quart), then the wordmark text fades back in.
+ *
+ * Reduced-motion: bars fade uniformly over 180ms; audio-driven scaleY stays
+ * (it reflects real audio, not decoration).
+ */
+const BAR_COUNT = 7;
+const CENTER_IDX = (BAR_COUNT - 1) / 2;
+
+function WordmarkWave({
+  meter,
+  active,
+}: {
+  meter: AudioMeterApi;
+  active: boolean;
+}) {
+  const reducedMotion = useReducedMotion();
+  const barRefs = useRef<(HTMLSpanElement | null)[]>([]);
+
+  useEffect(() => {
+    if (!active) return;
+    const phases = Array.from({ length: BAR_COUNT }, (_, i) => i * 0.7);
+    return meter.attach((level) => {
+      const t = performance.now() / 120;
+      for (let i = 0; i < barRefs.current.length; i++) {
+        const bar = barRefs.current[i];
+        if (!bar) continue;
+        // Center-weighted envelope: middle bars have more range than edges
+        const weight = 1 - (Math.abs(i - CENTER_IDX) / (CENTER_IDX + 1)) * 0.45;
+        const shimmer = 0.88 + 0.12 * Math.sin(t + phases[i]);
+        const h = 0.2 + level * shimmer * weight * (1 - 0.2);
+        bar.style.transform = `scaleY(${Math.max(0.2, Math.min(1, h))})`;
+      }
+    });
+  }, [meter, active]);
+
+  return (
+    <div
+      aria-hidden
+      className="absolute inset-0 flex items-center justify-center
+                 gap-[clamp(6px,1.1vw,14px)] pointer-events-none"
+    >
+      {Array.from({ length: BAR_COUNT }).map((_, i) => {
+        const distance = Math.abs(i - CENTER_IDX);
+        // On reveal, center fires first. On hide, edges fire first (reverse).
+        const stagger = reducedMotion
+          ? 0
+          : active
+            ? distance * 0.024
+            : (CENTER_IDX - distance) * 0.018;
+        return (
+          <motion.span
+            key={i}
+            initial={false}
+            animate={{ opacity: active ? 1 : 0 }}
+            transition={{
+              duration: reducedMotion ? 0.18 : active ? 0.28 : 0.22,
+              delay: stagger,
+              ease: active ? [0.16, 1, 0.3, 1] : [0.22, 1, 0.36, 1],
+            }}
+            className="flex items-center justify-center"
+            style={{
+              width: "clamp(7px, 1.1vw, 14px)",
+              height: "58%",
+            }}
+          >
+            <span
+              ref={(el) => {
+                barRefs.current[i] = el;
+              }}
+              className="block w-full h-full rounded-full"
+              style={{
+                background: "var(--color-accent)",
+                transformOrigin: "center",
+                transform: "scaleY(0.2)",
+                transition: "transform 60ms linear",
+                willChange: "transform",
+              }}
+            />
+          </motion.span>
+        );
+      })}
+    </div>
   );
 }
