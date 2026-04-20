@@ -426,20 +426,17 @@ export const TranscriptPanel = memo(
     const wpm = mins > 0.05 && words > 0 ? Math.round(words / mins) : null;
 
     return (
-      <article
-        className="relative rounded-2xl overflow-hidden
-                        border border-[var(--color-line)]
-                        bg-[var(--color-paper-2)]
-                        shadow-[0_1px_0_0_var(--color-line-soft)]"
-      >
+      <article className="relative">
+        {/* Masthead — title + language on the left, actions on the right */}
         <header
           className="flex items-center justify-between flex-wrap gap-3
-                           px-5 md:px-6 py-3
-                           border-b border-[var(--color-line-soft)]
-                           bg-[var(--color-paper-3)]"
+                     pb-3 border-b border-[var(--color-line-soft)]"
         >
           <div className="flex items-center gap-3 min-w-0">
-            <h2 className="font-display italic text-xl md:text-[22px] leading-none text-[var(--color-ink)]">
+            <h2
+              className="font-display italic text-2xl md:text-[26px] leading-none
+                         tracking-[-0.01em] text-[var(--color-ink)]"
+            >
               Transcript
             </h2>
             <span className="text-[var(--color-ink-faint)]" aria-hidden>
@@ -458,102 +455,183 @@ export const TranscriptPanel = memo(
               <Copy size={14} strokeWidth={1.8} />
               <span className="ml-1.5">Copy</span>
             </IconButton>
-            <IconButton label="Clear" onClick={onClear} showText>
+            <IconButton
+              label="Clear draft — wipes transcript and AI output"
+              onClick={onClear}
+              showText
+            >
               <Trash2 size={14} strokeWidth={1.8} />
               <span className="ml-1.5">Clear</span>
             </IconButton>
           </div>
         </header>
 
-        <div
-          ref={editorRef}
-          contentEditable
-          spellCheck
-          suppressContentEditableWarning
-          role="textbox"
-          aria-label="Transcript"
-          onInput={handleInput}
-          onMouseUp={cacheCaretRange}
-          onKeyUp={cacheCaretRange}
-          onBlur={cacheCaretRange}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey && onEnter) {
-              e.preventDefault();
-              onEnter();
-            }
-          }}
-          className="min-h-[260px] md:min-h-[320px] px-6 md:px-8 py-7
-                     font-display text-[22px] md:text-[26px] leading-[1.45]
-                     text-[var(--color-ink)]"
-        >
-          <span
-            ref={committedRef}
-            data-committed
-            data-placeholder="Your words appear here…"
-          />
-          <span
-            ref={interimRef}
-            data-interim
-            contentEditable={false}
-            suppressContentEditableWarning
-            className="interim-ghost"
-          />
-          <span
+        {/* Body — margin notes on the left (md+), editor on the right */}
+        <div className="md:grid md:grid-cols-[160px_1fr] md:gap-10 pt-6">
+          <aside
             aria-hidden
-            ref={tailCaretRef}
-            contentEditable={false}
+            className="hidden md:flex flex-col gap-6 pt-3
+                       font-mono text-[10px] uppercase tracking-[0.22em]
+                       text-[var(--color-ink-faint)]"
+          >
+            <MarginStat
+              big={formatDuration(elapsedMs)}
+              sub="session"
+              active={listening}
+            />
+            <MarginStat
+              big={String(words)}
+              sub="words"
+              numeric
+            />
+            <MarginStat big={String(chars)} sub="chars" numeric />
+            <MarginStat big={wpm == null ? "—" : String(wpm)} sub="wpm" numeric />
+          </aside>
+
+          <div
+            ref={editorRef}
+            contentEditable
+            spellCheck
             suppressContentEditableWarning
-            data-caret
-            className={listening ? "caret-on" : undefined}
-          />
+            role="textbox"
+            aria-label="Transcript"
+            onInput={handleInput}
+            onMouseUp={cacheCaretRange}
+            onKeyUp={cacheCaretRange}
+            onBlur={cacheCaretRange}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey && onEnter) {
+                e.preventDefault();
+                onEnter();
+              }
+            }}
+            className={cn(
+              "editor-listening-rail",
+              "max-w-[72ch] font-display text-[22px] md:text-[26px] leading-[1.5]",
+              "text-[var(--color-ink)]",
+              // While listening, the editor fills the viewport so dictation
+              // feels immersive; otherwise a sensible content-sized min-height.
+              listening
+                ? "min-h-[calc(100vh-260px)] md:min-h-[calc(100vh-240px)]"
+                : "min-h-[320px] md:min-h-[420px]",
+              "transition-[min-height] duration-[380ms]",
+              "[transition-timing-function:cubic-bezier(0.16,1,0.3,1)]",
+            )}
+          >
+            <span
+              ref={committedRef}
+              data-committed
+              data-placeholder="Your words appear here…"
+            />
+            <span
+              ref={interimRef}
+              data-interim
+              contentEditable={false}
+              suppressContentEditableWarning
+              className="interim-ghost"
+            />
+            <span
+              aria-hidden
+              ref={tailCaretRef}
+              contentEditable={false}
+              suppressContentEditableWarning
+              data-caret
+              className={listening ? "caret-on" : undefined}
+            />
+          </div>
         </div>
 
+        {/* Mobile-only stats strip — margin column is hidden on narrow.
+            Values in italic serif, captions in small-caps mono, to match
+            the margin-column hierarchy on desktop. */}
         <footer
           className={cn(
-            "flex flex-wrap items-center gap-5 px-6 md:px-8 py-3.5",
+            "md:hidden flex flex-wrap items-baseline gap-x-5 gap-y-2 pt-4 mt-6",
             "border-t border-[var(--color-line-soft)]",
-            "font-mono text-[11px] tracking-wide",
-            "text-[var(--color-ink-faint)] tabular",
           )}
         >
-          <span className="inline-flex items-center gap-2">
-            {listening ? (
-              <span className="rec-dot" aria-hidden />
-            ) : (
-              <span
-                className="inline-block w-[7px] h-[7px] rounded-full"
-                style={{ background: "var(--color-ink-faint)" }}
-                aria-hidden
-              />
-            )}
-            <span className={listening ? "text-[var(--color-ink)]" : ""}>
-              {formatDuration(elapsedMs)}
-            </span>
-          </span>
-          <span className="text-[var(--color-line)]">/</span>
-          <span>
-            <strong className="font-medium text-[var(--color-ink-dim)]">
-              {words}
-            </strong>{" "}
-            words
-          </span>
-          <span>
-            <strong className="font-medium text-[var(--color-ink-dim)]">
-              {chars}
-            </strong>{" "}
-            chars
-          </span>
-          <span>
-            <strong className="font-medium text-[var(--color-ink-dim)]">
-              {wpm ?? "—"}
-            </strong>{" "}
-            wpm
-          </span>
+          <MobileStat
+            big={formatDuration(elapsedMs)}
+            sub="session"
+            active={listening}
+          />
+          <MobileStat big={String(words)} sub="words" numeric />
+          <MobileStat big={String(chars)} sub="chars" numeric />
+          <MobileStat big={wpm == null ? "—" : String(wpm)} sub="wpm" numeric />
         </footer>
       </article>
     );
   }),
 );
+
+/** Horizontal variant of MarginStat used only on narrow viewports. */
+function MobileStat({
+  big,
+  sub,
+  numeric,
+  active,
+}: {
+  big: string;
+  sub: string;
+  numeric?: boolean;
+  active?: boolean;
+}) {
+  return (
+    <span className="inline-flex items-baseline gap-1.5">
+      {active && (
+        <span className="rec-dot relative -translate-y-[2px]" aria-hidden />
+      )}
+      <span
+        className={cn(
+          "font-display italic text-[17px] leading-none",
+          numeric && "tabular",
+          active ? "text-[var(--color-ink)]" : "text-[var(--color-ink-dim)]",
+        )}
+      >
+        {big}
+      </span>
+      <span
+        className="font-mono text-[10px] uppercase tracking-[0.2em]
+                   text-[var(--color-ink-faint)]"
+      >
+        {sub}
+      </span>
+    </span>
+  );
+}
+
+/** A single margin-column note: big serif value on top, tiny uppercase
+ *  mono caption below. Listening state shows a red rec-dot beside the value. */
+function MarginStat({
+  big,
+  sub,
+  numeric,
+  active,
+}: {
+  big: string;
+  sub: string;
+  numeric?: boolean;
+  active?: boolean;
+}) {
+  return (
+    <div>
+      <div
+        className={cn(
+          "flex items-center gap-2",
+          "font-display italic normal-case tracking-normal",
+          "text-[22px] leading-none text-[var(--color-ink-dim)]",
+          numeric && "tabular",
+        )}
+      >
+        {active && <span className="rec-dot" aria-hidden />}
+        <span className={active ? "text-[var(--color-ink)]" : undefined}>
+          {big}
+        </span>
+      </div>
+      <div className="mt-1.5">{sub}</div>
+    </div>
+  );
+}
 
 function IconButton({
   label,
@@ -572,10 +650,10 @@ function IconButton({
       title={label}
       aria-label={label}
       className={cn(
-        "inline-flex items-center px-2.5 py-1.5",
-        "rounded-lg border border-transparent text-[var(--color-ink-dim)]",
+        "lift inline-flex items-center px-2.5 py-1.5",
+        "rounded-md border border-transparent text-[var(--color-ink-dim)]",
         "hover:border-[var(--color-line)] hover:text-[var(--color-ink)]",
-        "transition-colors text-xs font-mono",
+        "text-xs font-mono",
         !showText && "w-8 justify-center",
       )}
     >

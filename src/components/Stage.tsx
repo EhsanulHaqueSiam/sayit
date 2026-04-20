@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
-import { motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Mic } from "lucide-react";
+import { AudioMeter } from "./AudioMeter";
 import { Keycap } from "./Keycap";
 import type { Mode } from "@/types";
 import type { AudioMeterApi } from "@/hooks/useAudioMeter";
@@ -15,16 +16,27 @@ interface Props {
   onToggle: () => void;
 }
 
+const STAGE_EASE = [0.16, 1, 0.3, 1] as const;
+
 /**
- * Hero. The wordmark "Say." IS the primary button, but it previously had
- * no button affordance — users couldn't tell. The fix:
- *   1. A breathing italic pre-title above: "tap to speak" + mic icon.
- *   2. A persistent dotted underline under the wordmark.
- *   3. Strong hover state: scale, period glow, dashed frame fade-in.
- *   4. Focus ring for keyboard nav.
- *   5. Dropped the redundant "Click the word to toggle." footnote.
+ * Hero / Focus switch. Not listening → full wordmark stage. Listening →
+ * compact focus strip so the transcript can fill the viewport.
  */
-export function Stage({
+export function Stage(props: Props) {
+  return (
+    <section className="relative">
+      <AnimatePresence mode="wait" initial={false}>
+        {props.listening ? (
+          <FocusStrip key="focus" {...props} />
+        ) : (
+          <FullStage key="full" {...props} />
+        )}
+      </AnimatePresence>
+    </section>
+  );
+}
+
+function FullStage({
   listening,
   spaceHeld,
   canDictate,
@@ -34,30 +46,15 @@ export function Stage({
   onToggle,
 }: Props) {
   return (
-    <section
+    <motion.div
+      initial={{ opacity: 0, y: 18 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -14 }}
+      transition={{ duration: 0.42, ease: STAGE_EASE }}
       className={`relative flex flex-col items-center
                   pt-10 pb-12 md:pt-16 md:pb-16
                   ${listening ? "is-listening" : ""}`}
     >
-      {/* Asymmetric editorial callouts floating at the corners */}
-      <p
-        className="hidden lg:block absolute top-10 left-8
-                   side-note text-[15px] max-w-[180px] leading-snug rotate-[-1.5deg]"
-        aria-hidden
-      >
-        Press &amp; hold,
-        <br />
-        words appear.
-      </p>
-      <p
-        className="hidden lg:block absolute top-16 right-8
-                   side-note text-[13px] text-right rotate-[1deg]
-                   tabular font-mono uppercase tracking-[0.18em] not-italic"
-        aria-hidden
-      >
-        v.0.1 · {language} · {mode === "ai" ? "AI" : "raw"}
-      </p>
-
       {/* Thin editorial rule behind the wordmark */}
       <div
         aria-hidden
@@ -202,9 +199,19 @@ export function Stage({
         <span className="side-note text-[17px]">to talk</span>
       </div>
 
+      {/* Space-tap-vs-hold teaching — surfaces the hidden behaviour */}
+      <p
+        className="enter enter--status mt-2 text-[13px]
+                   font-display italic text-[var(--color-ink-faint)]
+                   text-center max-w-[42ch]"
+      >
+        In the editor: hold Space to dictate at the cursor, tap Space for a
+        space.
+      </p>
+
       {/* Status line */}
       <div
-        className="enter enter--status mt-7 flex items-center gap-3 text-[11px] tracking-[0.24em]
+        className="enter enter--status mt-4 flex items-center gap-3 text-[11px] tracking-[0.24em]
                    uppercase font-mono text-[var(--color-ink-faint)]"
       >
         <span
@@ -228,7 +235,106 @@ export function Stage({
           <kbd>Enter</kbd> in the transcript runs the active preset.
         </p>
       )}
-    </section>
+
+      {/* Trust ribbon — surfaces the privacy story on first paint instead
+          of burying it in an 11px footer */}
+      <div
+        className="enter enter--status mt-6 flex items-center gap-3
+                   font-display italic text-[14px] md:text-[15px]
+                   leading-snug text-[var(--color-ink-faint)]
+                   max-w-[56ch] text-center tracking-[0.002em]"
+      >
+        <span
+          aria-hidden
+          className="hidden sm:inline-flex h-px w-10 bg-[var(--color-line)]"
+        />
+        <span>
+          No server. Your key talks directly to your provider. Stored on this
+          device only.
+        </span>
+        <span
+          aria-hidden
+          className="hidden sm:inline-flex h-px w-10 bg-[var(--color-line)]"
+        />
+      </div>
+    </motion.div>
+  );
+}
+
+/**
+ * Compact listening bar — replaces the full Stage while dictation is active.
+ * Gives the transcript the full viewport and keeps the live wave visible as
+ * reassurance that voice is being captured.
+ */
+function FocusStrip({
+  meter,
+  onToggle,
+  canDictate,
+}: Props) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -16, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: -10, scale: 0.99 }}
+      transition={{ duration: 0.38, ease: STAGE_EASE }}
+      className="relative is-listening flex items-center justify-center
+                 gap-5 md:gap-8 pt-6 pb-4 md:pt-8 md:pb-5"
+    >
+      {/* Tiny italic "Say." mini-wordmark — still a button so click/space
+          release logic is obvious on desktop */}
+      <button
+        onClick={onToggle}
+        disabled={!canDictate}
+        aria-label="Stop dictation"
+        className="lift group inline-flex items-baseline gap-2
+                   bg-transparent cursor-pointer text-[var(--color-ink)]
+                   px-2 py-1 rounded-md focus-visible:outline-none"
+      >
+        <span
+          className="wordmark font-display italic
+                     text-[32px] md:text-[40px] leading-none
+                     tracking-[-0.03em]"
+        >
+          Say
+          <span className="text-[var(--color-accent)] not-italic">.</span>
+        </span>
+      </button>
+
+      {/* Live audio wave — middle of the strip, the "voice is being heard"
+          affordance. Reuses the imperative AudioMeter (zero React renders). */}
+      <div
+        aria-hidden
+        className="flex items-center h-[44px] md:h-[52px]
+                   text-[var(--color-accent)]"
+      >
+        <AudioMeter meter={meter} bars={13} className="h-full gap-[4px]" idle={0.12} />
+      </div>
+
+      {/* Right-side rec label + release hint */}
+      <div className="flex items-center gap-3 md:gap-5">
+        <span
+          className="inline-flex items-center gap-2
+                     font-display italic text-[16px] md:text-[19px]
+                     text-[var(--color-ink)]"
+        >
+          <span className="rec-dot" aria-hidden />
+          listening
+        </span>
+        <span
+          aria-hidden
+          className="hidden md:inline text-[var(--color-line)] text-lg"
+        >
+          /
+        </span>
+        <span
+          className="hidden md:inline-flex items-center gap-1.5
+                     font-mono text-[10px] uppercase tracking-[0.22em]
+                     text-[var(--color-ink-faint)]"
+        >
+          release <kbd>Space</kbd> to stop
+        </span>
+      </div>
+    </motion.div>
   );
 }
 

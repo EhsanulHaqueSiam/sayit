@@ -1,9 +1,12 @@
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { X } from "lucide-react";
+import { Check, ChevronDown, Loader2, Lock, X } from "lucide-react";
+import { useState } from "react";
 import type { ReactNode } from "react";
 import type { Provider, Settings } from "@/types";
 import { LANGUAGES, languageFlag } from "@/lib/languages";
 import { DEFAULT_MODELS } from "@/lib/constants";
+import { testAIKey } from "@/lib/ai";
+import { cn } from "@/lib/utils";
 
 interface Props {
   open: boolean;
@@ -92,12 +95,11 @@ export function SettingsDrawer({ open, settings, onClose, onChange }: Props) {
               </div>
               <button
                 onClick={onClose}
-                className="group relative inline-flex items-center justify-center
+                className="lift group relative inline-flex items-center justify-center
                            w-9 h-9 rounded-full
                            text-[var(--color-ink-dim)]
                            hover:text-[var(--color-ink)]
-                           focus-visible:outline-none
-                           transition-colors duration-150"
+                           focus-visible:outline-none"
                 aria-label="Close settings"
               >
                 <span
@@ -265,11 +267,17 @@ export function SettingsDrawer({ open, settings, onClose, onChange }: Props) {
                 <FieldRow
                   index={settings.provider === "openai-compat" ? "vii" : "vi"}
                   label="API key"
-                  mono="secret"
+                  trust={
+                    <>
+                      <Lock size={11} strokeWidth={1.9} aria-hidden />
+                      <span>Stays on this device — goes direct to your provider.</span>
+                    </>
+                  }
                   sidenote={
                     <>
-                      Kept in <code>localStorage</code> only. Sent direct to the
-                      provider over HTTPS — never to us.
+                      Kept in <code>localStorage</code> only, sent browser →
+                      provider over HTTPS. We never see it, we don't run a
+                      server.
                     </>
                   }
                 >
@@ -280,6 +288,11 @@ export function SettingsDrawer({ open, settings, onClose, onChange }: Props) {
                     onChange={(e) => onChange({ apiKey: e.target.value })}
                     placeholder="sk-…"
                     className={`${inputCls} font-mono text-[13px]`}
+                  />
+                  <APIKeyTrustControls
+                    provider={settings.provider}
+                    apiKey={settings.apiKey}
+                    baseUrl={settings.baseUrl}
                   />
                 </FieldRow>
               </motion.div>
@@ -385,10 +398,274 @@ function SectionHeader({
   );
 }
 
+/**
+ * Trust controls rendered directly beneath the API-key input:
+ *   [Test key] ─ button that hits the provider's /models endpoint and
+ *                reports success/failure inline without running a preset.
+ *   [Where does this go? ⌄] ─ expandable editorial diagram showing the
+ *                request route: browser → provider, never → any server
+ *                we run.
+ * All feedback is transient and non-modal. Reassurance, not ceremony.
+ */
+function APIKeyTrustControls({
+  provider,
+  apiKey,
+  baseUrl,
+}: {
+  provider: Provider;
+  apiKey: string;
+  baseUrl: string;
+}) {
+  const [status, setStatus] = useState<
+    | { kind: "idle" }
+    | { kind: "testing" }
+    | { kind: "ok"; message: string }
+    | { kind: "err"; message: string }
+  >({ kind: "idle" });
+  const [open, setOpen] = useState(false);
+  const reduced = useReducedMotion();
+
+  const runTest = async () => {
+    if (status.kind === "testing") return;
+    setStatus({ kind: "testing" });
+    const res = await testAIKey({ provider, apiKey, baseUrl });
+    setStatus({ kind: res.ok ? "ok" : "err", message: res.message });
+    window.setTimeout(() => setStatus({ kind: "idle" }), 4800);
+  };
+
+  return (
+    <div className="mt-3 flex flex-col gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
+        <button
+          type="button"
+          onClick={runTest}
+          disabled={status.kind === "testing"}
+          className="lift inline-flex items-center gap-1.5
+                     px-3 py-1 rounded-full
+                     border border-[var(--color-line)]
+                     text-[var(--color-ink-dim)]
+                     hover:border-[var(--color-ink-dim)]
+                     hover:text-[var(--color-ink)]
+                     disabled:opacity-50 disabled:cursor-not-allowed
+                     font-mono text-[11px] tracking-[0.04em]"
+        >
+          {status.kind === "testing" ? (
+            <>
+              <Loader2 size={11} strokeWidth={1.8} className="animate-spin" />
+              Testing…
+            </>
+          ) : (
+            <>
+              <Check size={11} strokeWidth={1.8} />
+              Test key
+            </>
+          )}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          className="lift inline-flex items-center gap-1.5
+                     px-2.5 py-1 rounded-full
+                     text-[var(--color-ink-faint)]
+                     hover:text-[var(--color-ink-dim)]
+                     font-display italic text-[14px] leading-none"
+        >
+          <span>Where does this go?</span>
+          <ChevronDown
+            size={11}
+            strokeWidth={1.8}
+            className={cn(
+              "transition-transform duration-200",
+              open && "rotate-180",
+            )}
+          />
+        </button>
+
+        {/* Inline test result — crossfades in beside the buttons */}
+        <AnimatePresence>
+          {(status.kind === "ok" || status.kind === "err") && (
+            <motion.span
+              key={status.kind + status.message}
+              initial={{ opacity: 0, x: -4 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -4 }}
+              transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+              className={cn(
+                "font-mono text-[11px] tracking-[0.04em]",
+                status.kind === "ok"
+                  ? "text-[var(--color-ok)]"
+                  : "text-[var(--color-danger)]",
+              )}
+            >
+              {status.kind === "ok" ? "✓" : "×"} {status.message}
+            </motion.span>
+          )}
+        </AnimatePresence>
+      </div>
+
+      {/* "Where does this go?" — disclosure with an editorial route diagram */}
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            key="disclosure"
+            initial={reduced ? { opacity: 0 } : { opacity: 0, height: 0 }}
+            animate={
+              reduced ? { opacity: 1 } : { opacity: 1, height: "auto" }
+            }
+            exit={reduced ? { opacity: 0 } : { opacity: 0, height: 0 }}
+            transition={{
+              duration: reduced ? 0.18 : 0.34,
+              ease: [0.22, 1, 0.36, 1],
+            }}
+            className="overflow-hidden"
+          >
+            <div
+              className="mt-1 rounded-md border border-[var(--color-line)]
+                         bg-[color-mix(in_srgb,var(--color-paper-2)_60%,transparent)]
+                         px-5 py-5"
+            >
+              <RouteDiagram provider={provider} />
+              <p
+                className="mt-4 font-display italic text-[14px] leading-[1.5]
+                           text-[var(--color-ink-dim)] max-w-[52ch]"
+              >
+                SayIt is a static page. No backend, no relay server. Your key
+                and prompts travel straight from this browser to your chosen
+                provider over HTTPS. Revoke any time by clearing the field —
+                nothing else needs to happen.
+              </p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+/** A small editorial route illustration: browser → provider, with a crossed-out
+ *  "our server" trace so the no-intermediate-server claim is visual, not copy. */
+function RouteDiagram({ provider }: { provider: Provider }) {
+  const providerLabel =
+    provider === "anthropic"
+      ? "Anthropic"
+      : provider === "openai"
+        ? "OpenAI"
+        : provider === "google"
+          ? "Google"
+          : "Your endpoint";
+
+  return (
+    <div aria-hidden className="relative">
+      {/* Row 1 — actual route */}
+      <div className="flex items-center gap-3 md:gap-4 flex-wrap">
+        <RouteNode label="this browser" accent />
+        <RouteArrow />
+        <RouteNode label={providerLabel} accent />
+        <span
+          className="ml-2 font-mono text-[10px] uppercase tracking-[0.22em]
+                     text-[var(--color-accent)]"
+        >
+          https · direct
+        </span>
+      </div>
+
+      {/* Row 2 — absence of a server we run */}
+      <div className="mt-4 flex items-center gap-3 md:gap-4 flex-wrap">
+        <RouteNode label="this browser" muted />
+        <RouteArrow muted crossed />
+        <RouteNode label="our server" muted strike />
+        <span
+          className="ml-2 font-mono text-[10px] uppercase tracking-[0.22em]
+                     text-[var(--color-ink-faint)]"
+        >
+          doesn't exist
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function RouteNode({
+  label,
+  accent,
+  muted,
+  strike,
+}: {
+  label: string;
+  accent?: boolean;
+  muted?: boolean;
+  strike?: boolean;
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center px-3 py-1.5 rounded-md",
+        "font-display italic text-[15px] leading-none",
+        "border",
+        accent &&
+          "border-[var(--color-ink-dim)] text-[var(--color-ink)] bg-[var(--color-paper)]",
+        muted &&
+          "border-dashed border-[var(--color-line)] text-[var(--color-ink-faint)]",
+        strike && "line-through decoration-[var(--color-ink-faint)]",
+      )}
+    >
+      {label}
+    </span>
+  );
+}
+
+function RouteArrow({
+  muted,
+  crossed,
+}: {
+  muted?: boolean;
+  crossed?: boolean;
+}) {
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        "relative inline-flex items-center",
+        muted ? "text-[var(--color-ink-faint)]" : "text-[var(--color-accent)]",
+      )}
+    >
+      <svg width="44" height="12" viewBox="0 0 44 12" fill="none">
+        <path
+          d="M2 6 L38 6"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+          strokeDasharray={muted ? "3 4" : undefined}
+        />
+        <path
+          d="M34 2 L40 6 L34 10"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          fill="none"
+        />
+      </svg>
+      {crossed && (
+        <span
+          className="absolute left-1/2 top-1/2
+                     -translate-x-1/2 -translate-y-1/2
+                     text-[15px] font-mono text-[var(--color-ink-faint)]"
+        >
+          ×
+        </span>
+      )}
+    </span>
+  );
+}
+
 function FieldRow({
   index,
   label,
   mono,
+  trust,
   sidenote,
   compact,
   children,
@@ -396,13 +673,17 @@ function FieldRow({
   index: string;
   label: string;
   mono?: string;
+  /** Inline trust/reassurance hint rendered in the label row. Use for
+   *  sensitive fields (API keys, tokens) where privacy belongs up top, not
+   *  as an afterthought below the input. */
+  trust?: ReactNode;
   sidenote?: ReactNode;
   compact?: boolean;
   children: ReactNode;
 }) {
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex items-baseline gap-3">
+      <div className="flex items-baseline gap-3 flex-wrap">
         <span
           className="font-mono text-[10px] tracking-[0.22em] uppercase
                      text-[var(--color-ink-faint)] w-7 shrink-0"
@@ -421,6 +702,15 @@ function FieldRow({
                        text-[var(--color-ink-faint)]"
           >
             · {mono}
+          </span>
+        )}
+        {trust && (
+          <span
+            className="ml-auto inline-flex items-center gap-1.5
+                       font-mono text-[11px] tracking-[0.02em]
+                       text-[var(--color-accent)]"
+          >
+            {trust}
           </span>
         )}
       </div>

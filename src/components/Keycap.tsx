@@ -26,7 +26,7 @@ export function Keycap({ pressed, disabled, label = "Space", size = "lg", meter 
       {!pressed && !disabled && (
         <span
           aria-hidden
-          className="absolute inset-[-10px] rounded-2xl pointer-events-none
+          className="absolute inset-[-10px] rounded-md pointer-events-none
                      border border-dashed border-[var(--color-ink-faint)]/40
                      animate-[hintRing_3.6s_ease-in-out_infinite]"
         />
@@ -34,21 +34,16 @@ export function Keycap({ pressed, disabled, label = "Space", size = "lg", meter 
 
       <motion.div
         role="presentation"
-        animate={
-          pressed
-            ? { y: 3, scale: 0.985 }
-            : { y: 0, scale: 1 }
-        }
+        animate={pressed ? { y: 1, scale: 0.985 } : { y: 0, scale: 1 }}
         transition={{ type: "spring", stiffness: 500, damping: 26 }}
         className={cn(
           "relative inline-flex items-center justify-center gap-3 px-6 py-3",
           width,
-          "rounded-xl font-mono tracking-[0.22em] uppercase text-[13px] font-semibold",
-          "border border-[var(--color-line)]",
-          "transition-colors duration-150",
+          "rounded-md font-mono tracking-[0.22em] uppercase text-[13px] font-semibold",
+          "border transition-colors duration-150",
           pressed
-            ? "bg-[var(--color-accent)] text-[var(--color-accent-ink)] border-[var(--color-accent)] shadow-[0_0_0_0_transparent,inset_0_1px_3px_rgba(0,0,0,0.2)]"
-            : "bg-gradient-to-b from-[var(--color-paper-2)] to-[var(--color-paper-3)] text-[var(--color-ink-dim)] shadow-[0_3px_0_0_var(--color-line),inset_0_-1px_0_color-mix(in_srgb,var(--color-ink)_5%,transparent)]",
+            ? "bg-[var(--color-accent)] text-[var(--color-accent-ink)] border-[var(--color-accent)]"
+            : "bg-transparent text-[var(--color-ink-dim)] border-[var(--color-line)]",
         )}
       >
         {/* the ⎵ glyph */}

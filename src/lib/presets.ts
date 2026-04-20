@@ -1,36 +1,49 @@
 import type { Preset, PresetKey } from "@/types";
 
+/**
+ * Presets speak the writer's language, not the tool's.
+ * `label` is the verb the user would reach for; `description` is a one-line
+ * italic caption shown in the More-styles popover and on hover of the chips.
+ */
 export const PRESETS: Record<PresetKey, Preset> = {
   polish: {
-    label: "Polish",
+    label: "Tidy",
+    description: "Fix grammar and punctuation, preserve your voice.",
     prompt: `Fix grammar, capitalization, and punctuation in the transcript below. Add sensible paragraph breaks. Honor inline spoken commands like "delete that last line" or "make that more professional". Preserve the user's voice. Return ONLY the polished text — no preamble, no quotes.`,
   },
   professional: {
-    label: "Professional",
+    label: "Formalize",
+    description: "A clean, business-register rewrite.",
     prompt: `Rewrite the transcript in a clear, professional tone suitable for business communication. Fix grammar and punctuation. Tighten verbose phrasing. Preserve all substantive content. Return ONLY the rewritten text.`,
   },
   casual: {
-    label: "Casual",
+    label: "Loosen",
+    description: "A warm, conversational rewrite.",
     prompt: `Rewrite the transcript in a relaxed, natural, conversational tone — like a friendly message. Fix grammar. Keep it warm but not sloppy. Return ONLY the rewritten text.`,
   },
   bullets: {
-    label: "Bullets",
+    label: "To bullets",
+    description: "Compress to a tight bullet list.",
     prompt: `Convert the transcript into a tight list of bullet points. Capture every substantive idea; drop filler. Use "- " as the bullet marker. Return ONLY the bullet list.`,
   },
   summarize: {
-    label: "Summarize",
+    label: "Distill",
+    description: "Two to four sentences, key points only.",
     prompt: `Summarize the transcript in 2–4 sentences, capturing the key points and intent. Return ONLY the summary.`,
   },
   email: {
-    label: "Email",
+    label: "As email",
+    description: "Structured email with an inferred subject line.",
     prompt: `Rewrite the transcript as a polished email. Infer a sensible subject line from the content. Format as:\n\nSubject: <subject>\n\n<body>\n\nReturn ONLY the formatted email.`,
   },
   translate: {
     label: "Translate",
+    description: "Render in any BCP-47 target language.",
     needsTarget: true,
   },
   custom: {
     label: "Custom",
+    description: "Run your own system prompt from Settings.",
     useUserSystemPrompt: true,
   },
 };

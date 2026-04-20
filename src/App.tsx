@@ -50,7 +50,7 @@ export default function App() {
   });
   const supportReason = useMemo(() => detectSupport(), []);
   const canDictate = supportReason === "ok";
-  const { toasts, push } = useToasts();
+  const { toasts, push, dismiss } = useToasts();
   const transcriptRef = useRef(transcript);
   const settingsRef = useRef(settings);
   const interimRef = useRef("");
@@ -74,13 +74,27 @@ export default function App() {
     [setSettings],
   );
 
-  // Theme → <html data-theme>
+  // Theme → <html data-theme>. On change, tag <html> with
+  // .theme-transitioning for 360ms so color/bg/border animate smoothly
+  // across the whole document, then remove so per-element hover
+  // transitions aren't slowed down.
+  const firstThemePaintRef = useRef(true);
   useLayoutEffect(() => {
+    const html = document.documentElement;
     if (settings.theme) {
-      document.documentElement.dataset.theme = settings.theme;
+      html.dataset.theme = settings.theme;
     } else {
-      delete document.documentElement.dataset.theme;
+      delete html.dataset.theme;
     }
+    if (firstThemePaintRef.current) {
+      firstThemePaintRef.current = false;
+      return;
+    }
+    html.classList.add("theme-transitioning");
+    const timer = window.setTimeout(() => {
+      html.classList.remove("theme-transitioning");
+    }, 360);
+    return () => window.clearTimeout(timer);
   }, [settings.theme]);
 
   // ---- AI runner (defined before hooks that reference it) ----
@@ -111,6 +125,19 @@ export default function App() {
         translateTarget = target.trim();
       }
       update({ activePreset: preset, translateTarget });
+      // Guard: empty API key would fail at the network layer with a cryptic
+      // message. Stop here and nudge the user to Settings.
+      if (!s.apiKey.trim()) {
+        if (showErrorToast) {
+          push("No API key set — add one in Settings to run presets", "err", {
+            action: {
+              label: "Open",
+              onClick: () => setSettingsOpen(true),
+            },
+          });
+        }
+        return;
+      }
       setAIError(null);
       if (trackRunning) setRunningPreset(preset);
       try {
@@ -127,7 +154,7 @@ export default function App() {
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         setAIError(msg);
-        if (showErrorToast) push(msg.slice(0, 120), "err", 2800);
+        if (showErrorToast) push(msg, "err");
       } finally {
         if (trackRunning) setRunningPreset(null);
       }
@@ -443,6 +470,12 @@ export default function App() {
   };
 
   const clearTranscript = () => {
+    // Snapshot what we're about to wipe so the toast can restore it.
+    const snapshot = {
+      transcript: transcriptRef.current,
+      aiOutput,
+      aiError,
+    };
     clearLiveTranslateTimer();
     liveTranslateQueuedRef.current = false;
     lastLiveTranslateInputRef.current = "";
@@ -452,6 +485,23 @@ export default function App() {
     setAIOutput("");
     setAIError(null);
     resetTimer();
+
+    const hadContent =
+      snapshot.transcript.trim().length > 0 || snapshot.aiOutput.trim().length > 0;
+    if (!hadContent) return;
+
+    push("Draft cleared", "info", {
+      ttl: 8000,
+      action: {
+        label: "Undo",
+        onClick: () => {
+          transcriptApiRef.current?.setText(snapshot.transcript);
+          setTranscript(snapshot.transcript);
+          setAIOutput(snapshot.aiOutput);
+          setAIError(snapshot.aiError);
+        },
+      },
+    });
   };
 
   const useAIAsTranscript = () => {
@@ -521,11 +571,7 @@ export default function App() {
           }}
         />
 
-        <section
-          className={`enter enter--panels grid gap-6 ${
-            settings.mode === "ai" ? "lg:grid-cols-2" : ""
-          }`}
-        >
+        <section className="enter enter--panels flex flex-col">
           <TranscriptPanel
             ref={transcriptApiRef}
             text={transcript}
@@ -543,21 +589,24 @@ export default function App() {
             }
           />
           {settings.mode === "ai" && (
-            <AIPanel
-              output={aiOutput}
-              activePreset={settings.activePreset}
-              runningPreset={runningPreset}
-              errorMessage={aiError}
-              onRunPreset={(k) => void runAI(k)}
-              onCopy={() => void copyTarget("ai")}
-              onUseAsTranscript={useAIAsTranscript}
-            />
+            <div className="focus-dim">
+              <AIPanel
+                output={aiOutput}
+                activePreset={settings.activePreset}
+                runningPreset={runningPreset}
+                errorMessage={aiError}
+                onRunPreset={(k) => void runAI(k)}
+                onRetry={() => void runAI(settings.activePreset)}
+                onCopy={() => void copyTarget("ai")}
+                onUseAsTranscript={useAIAsTranscript}
+              />
+            </div>
           )}
         </section>
       </main>
 
       <footer
-        className="enter enter--footer py-6 border-t border-[var(--color-line-soft)]
+        className="focus-hide enter enter--footer py-6 border-t border-[var(--color-line-soft)]
                    text-center font-mono text-[11px] tracking-[0.2em]
                    uppercase text-[var(--color-ink-faint)]"
       >
@@ -570,7 +619,7 @@ export default function App() {
         onClose={() => setSettingsOpen(false)}
         onChange={update}
       />
-      <Toaster toasts={toasts} />
+      <Toaster toasts={toasts} onDismiss={dismiss} />
     </div>
   );
 }

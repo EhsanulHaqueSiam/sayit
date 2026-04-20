@@ -30,6 +30,7 @@ export interface Settings {
 
 export interface Preset {
   label: string;
+  description: string;
   prompt?: string;
   needsTarget?: boolean;
   useUserSystemPrompt?: boolean;

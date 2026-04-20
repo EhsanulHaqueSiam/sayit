@@ -98,6 +98,84 @@ async function callOpenAILike({
   return j.choices?.[0]?.message?.content ?? "";
 }
 
+/**
+ * Validate an API key without running a full preset. Hits each provider's
+ * cheapest authenticated endpoint (usually /models listing). Returns a
+ * structured result so the UI can distinguish "invalid key" from "network
+ * blew up" from "OK".
+ */
+export interface TestKeyArgs {
+  provider: Provider;
+  apiKey: string;
+  baseUrl: string;
+}
+export interface TestKeyResult {
+  ok: boolean;
+  message: string;
+}
+
+export async function testAIKey({
+  provider,
+  apiKey,
+  baseUrl,
+}: TestKeyArgs): Promise<TestKeyResult> {
+  if (!apiKey && provider !== "openai-compat") {
+    return { ok: false, message: "Add a key first" };
+  }
+
+  try {
+    if (provider === "anthropic") {
+      const r = await fetch("https://api.anthropic.com/v1/models", {
+        method: "GET",
+        headers: {
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-direct-browser-access": "true",
+        },
+      });
+      if (r.ok) return { ok: true, message: "Key works" };
+      if (r.status === 401 || r.status === 403)
+        return { ok: false, message: "Key rejected" };
+      return { ok: false, message: `Anthropic returned ${r.status}` };
+    }
+    if (provider === "openai") {
+      const r = await fetch("https://api.openai.com/v1/models", {
+        method: "GET",
+        headers: { Authorization: `Bearer ${apiKey}` },
+      });
+      if (r.ok) return { ok: true, message: "Key works" };
+      if (r.status === 401 || r.status === 403)
+        return { ok: false, message: "Key rejected" };
+      return { ok: false, message: `OpenAI returned ${r.status}` };
+    }
+    if (provider === "google") {
+      const r = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`,
+      );
+      if (r.ok) return { ok: true, message: "Key works" };
+      if (r.status === 400 || r.status === 401 || r.status === 403)
+        return { ok: false, message: "Key rejected" };
+      return { ok: false, message: `Gemini returned ${r.status}` };
+    }
+    if (provider === "openai-compat") {
+      const base = (baseUrl || "").replace(/\/+$/, "");
+      if (!base) return { ok: false, message: "Set a base URL first" };
+      const headers: Record<string, string> = {};
+      if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+      const r = await fetch(`${base}/models`, { headers });
+      if (r.ok) return { ok: true, message: "Key works" };
+      if (r.status === 401 || r.status === 403)
+        return { ok: false, message: "Key rejected" };
+      return { ok: false, message: `${new URL(base).host} ${r.status}` };
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, message: `Network error — ${msg}` };
+  }
+
+  return { ok: false, message: "Unknown provider" };
+}
+
 async function callGemini({
   apiKey,
   model,

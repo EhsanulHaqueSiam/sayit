@@ -23,8 +23,7 @@ export function Topbar({
     <header
       className={`sticky top-0 z-20 flex items-center justify-between
                  px-6 md:px-10 py-5 border-b border-[var(--color-line-soft)]
-                 bg-[color-mix(in_srgb,var(--color-paper)_82%,transparent)]
-                 backdrop-blur-md ${className}`}
+                 bg-[var(--color-paper)] ${className}`}
     >
       <a
         href="/"
@@ -41,7 +40,7 @@ export function Topbar({
       <nav className="flex items-center gap-2">
         <button
           onClick={onToggleMode}
-          className={`px-3 py-2 rounded-full text-xs font-mono border transition-colors
+          className={`lift px-3 py-2 rounded-full text-xs font-mono border
                       ${
                         mode === "ai"
                           ? "bg-[var(--color-accent)] border-[var(--color-accent)] text-[var(--color-accent-ink)]"
@@ -58,11 +57,10 @@ export function Topbar({
 
         <button
           onClick={onOpenSettings}
-          className="inline-flex items-center gap-2 px-3 py-2 rounded-full
+          className="lift inline-flex items-center gap-2 px-3 py-2 rounded-full
                      bg-[var(--color-paper-2)] border border-[var(--color-line)]
                      text-[var(--color-ink-dim)] text-xs font-mono
-                     hover:border-[var(--color-ink-dim)] hover:text-[var(--color-ink)]
-                     transition-colors"
+                     hover:border-[var(--color-ink-dim)] hover:text-[var(--color-ink)]"
           aria-label="Open settings"
         >
           <Settings2 size={14} strokeWidth={1.6} />

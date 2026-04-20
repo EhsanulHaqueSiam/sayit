@@ -60,24 +60,13 @@ export function UnsupportedNotice({ reason, onDismiss, onCopied }: Props) {
                 : "This browser can't run SayIt."}
             </p>
             <p className="text-sm text-[var(--color-ink-dim)] leading-relaxed max-w-xl">
-              {reason === "firefox" ? (
-                <>
-                  The Web Speech API is a Chromium-only feature — Mozilla has it
-                  stubbed behind a flag, but there's no real backend to talk to.
-                  Open this page in <strong className="text-[var(--color-ink)]">
-                  Chrome, Edge, Brave, or Arc
-                  </strong> to dictate.
-                </>
-              ) : (
-                <>
-                  We couldn't find <code className="font-mono text-xs px-1 py-0.5 rounded bg-[var(--color-paper-3)] text-[var(--color-ink)]">
-                  webkitSpeechRecognition
-                  </code>{" "}
-                  in this browser. Try <strong className="text-[var(--color-ink)]">
-                  Chrome, Edge, Brave, or Arc
-                  </strong>.
-                </>
-              )}
+              SayIt uses your browser's built-in voice recognition, which only
+              works in{" "}
+              <strong className="text-[var(--color-ink)]">
+                Chrome, Edge, Brave, or Arc
+              </strong>
+              . Open the page there to dictate — copy the link if it's easier
+              to paste over.
             </p>
           </div>
         </div>
@@ -98,36 +87,34 @@ export function UnsupportedNotice({ reason, onDismiss, onCopied }: Props) {
             ) : null}
           </AnimatePresence>
 
-          <button
-            onClick={copyUrl}
-            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-full
-                       bg-[var(--color-ink)] text-[var(--color-paper)]
-                       font-mono text-xs font-medium
-                       hover:bg-[color-mix(in_srgb,var(--color-ink)_90%,var(--color-accent))]
-                       transition-colors"
-          >
-            <Copy size={13} strokeWidth={1.8} />
-            Copy link
-          </button>
-
           <a
             href="https://www.google.com/chrome/"
             target="_blank"
             rel="noreferrer noopener"
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-full
-                       border border-[var(--color-line)] text-[var(--color-ink-dim)]
-                       hover:text-[var(--color-ink)] hover:border-[var(--color-ink-dim)]
-                       font-mono text-xs transition-colors
+            className="lift inline-flex items-center gap-2 px-3.5 py-2 rounded-full
+                       bg-[var(--color-ink)] text-[var(--color-paper)]
+                       font-mono text-xs font-medium
+                       hover:bg-[color-mix(in_srgb,var(--color-ink)_90%,var(--color-accent))]
                        no-underline"
           >
             Get Chrome <ExternalLink size={12} strokeWidth={1.8} />
           </a>
 
           <button
+            onClick={copyUrl}
+            className="lift inline-flex items-center gap-1.5 px-3 py-2 rounded-full
+                       border border-[var(--color-line)] text-[var(--color-ink-dim)]
+                       hover:text-[var(--color-ink)] hover:border-[var(--color-ink-dim)]
+                       font-mono text-xs"
+          >
+            <Copy size={12} strokeWidth={1.8} />
+            Copy link
+          </button>
+
+          <button
             onClick={onDismiss}
-            className="p-1.5 rounded-full text-[var(--color-ink-faint)]
-                       hover:text-[var(--color-ink)] hover:bg-[var(--color-paper-2)]
-                       transition-colors"
+            className="lift p-1.5 rounded-full text-[var(--color-ink-faint)]
+                       hover:text-[var(--color-ink)] hover:bg-[var(--color-paper-2)]"
             aria-label="Dismiss notice"
             title="Dismiss"
           >

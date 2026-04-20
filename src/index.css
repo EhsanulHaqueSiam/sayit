@@ -14,7 +14,8 @@
   --color-paper-3: #ddd3bf;
   --color-ink: #1a1612;
   --color-ink-dim: #5e544a;
-  --color-ink-faint: #948a7b;
+  /* Bumped from #948a7b → ~4.9:1 on paper to pass WCAG AA (was ~3.0:1) */
+  --color-ink-faint: #6b6253;
   --color-line: #cbc0aa;
   --color-line-soft: #ddd3bf;
   --color-accent: #c4491a;       /* blood-orange */
@@ -30,7 +31,8 @@
   --color-paper-3: #22201c;
   --color-ink: #f1ebdf;
   --color-ink-dim: #b0a79a;
-  --color-ink-faint: #7a7166;
+  /* Bumped from #7a7166 → ~5.0:1 on deep ink for WCAG AA (was ~4.26:1) */
+  --color-ink-faint: #8f8679;
   --color-line: #2b2620;
   --color-line-soft: #1f1b17;
   --color-accent: #e87c3c;
@@ -46,7 +48,7 @@
     --color-paper-3: #22201c;
     --color-ink: #f1ebdf;
     --color-ink-dim: #b0a79a;
-    --color-ink-faint: #7a7166;
+    --color-ink-faint: #8f8679;
     --color-line: #2b2620;
     --color-line-soft: #1f1b17;
     --color-accent: #e87c3c;
@@ -124,6 +126,94 @@ body::after {
 body.is-listening::after {
   filter: blur(46px) saturate(1.1);
   transform: scale(1.015);
+}
+
+/* ---------- Focus mode — while listening, non-writing surfaces recede ----- */
+/* Transcript becomes the hero; the AI output section dims and the footer
+   fades out. Hover/focus on a dimmed surface restores it so the user can
+   still reach it if they want. */
+
+.focus-dim {
+  transition:
+    opacity 360ms cubic-bezier(0.22, 1, 0.36, 1),
+    filter 360ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+body.is-listening .focus-dim {
+  opacity: 0.28;
+  filter: saturate(0.7);
+  pointer-events: none;
+}
+body.is-listening .focus-dim:hover,
+body.is-listening .focus-dim:focus-within {
+  opacity: 1;
+  filter: none;
+  pointer-events: auto;
+}
+
+body.is-listening footer.focus-hide {
+  opacity: 0;
+  transform: translateY(4px);
+  pointer-events: none;
+  transition:
+    opacity 300ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 300ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+footer.focus-hide {
+  transition:
+    opacity 360ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 360ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Respect reduced motion — kill the transitions. */
+@media (prefers-reduced-motion: reduce) {
+  .focus-dim,
+  footer.focus-hide,
+  body.is-listening footer.focus-hide {
+    transition: opacity 160ms linear;
+    transform: none !important;
+  }
+}
+
+/* ---------- Listening rail ---------- */
+/* A subtle 2px vertical accent rule on the left of the transcript editor
+   that breathes while dictation is active. Rendering-only pseudo-element
+   — it sits outside the editable DOM so contenteditable never sees it. */
+
+.editor-listening-rail {
+  position: relative;
+}
+.editor-listening-rail::before {
+  content: "";
+  position: absolute;
+  left: -18px;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--color-accent);
+  opacity: 0;
+  transform: scaleY(0.8);
+  transform-origin: center;
+  transition:
+    opacity 360ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 420ms cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: none;
+}
+body.is-listening .editor-listening-rail::before {
+  opacity: 0.7;
+  transform: scaleY(1);
+  animation: railBreathe 2.6s ease-in-out infinite 420ms;
+}
+@keyframes railBreathe {
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 0.95; }
+}
+@media (prefers-reduced-motion: reduce) {
+  body.is-listening .editor-listening-rail::before {
+    animation: none;
+    opacity: 0.7;
+  }
 }
 
 /* Dark-mode ambient — deeper amber + rust on ink */
@@ -246,6 +336,64 @@ body::before {
   }
 
   .tabular { font-variant-numeric: tabular-nums; }
+
+  /* Premium interactive polish.
+     Every pill / icon / chip in the app gets this class. The result:
+     smooth color + border transitions, a 1px hover lift, a gentle
+     press-squish, and an animated accent focus-ring for keyboard users.
+     Transform-only so we stay on the compositor. */
+  .lift {
+    transition-property: transform, background-color, color, border-color, box-shadow, opacity;
+    transition-duration: 200ms;
+    transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: transform;
+  }
+  .lift:hover:not(:disabled):not([aria-disabled="true"]) {
+    transform: translateY(-1px);
+  }
+  .lift:active:not(:disabled):not([aria-disabled="true"]) {
+    transform: translateY(0) scale(0.985);
+    transition-duration: 80ms;
+  }
+  .lift:focus-visible {
+    outline: none;
+    box-shadow:
+      0 0 0 2px var(--color-paper),
+      0 0 0 4px color-mix(in srgb, var(--color-accent) 55%, transparent);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .lift,
+    .lift:hover,
+    .lift:active {
+      transition-duration: 120ms;
+      transform: none;
+    }
+  }
+}
+
+/* ---------- Theme crossfade ---------- */
+/* When <html> gets .theme-transitioning (applied by App.tsx around a theme
+   swap), every color, background, border, and svg fill/stroke animates for
+   a single 320ms window. Outside that window, no global transition runs,
+   so per-element transitions aren't delayed or duplicated. */
+
+html.theme-transitioning,
+html.theme-transitioning *,
+html.theme-transitioning *::before,
+html.theme-transitioning *::after {
+  transition:
+    background-color 320ms cubic-bezier(0.22, 1, 0.36, 1),
+    color 320ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 320ms cubic-bezier(0.22, 1, 0.36, 1),
+    fill 320ms cubic-bezier(0.22, 1, 0.36, 1),
+    stroke 320ms cubic-bezier(0.22, 1, 0.36, 1) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.theme-transitioning,
+  html.theme-transitioning * {
+    transition: none !important;
+  }
 }
 
 /* ---------- Page-load cinematic entrance ---------- */
@@ -270,21 +418,24 @@ body::before {
 }
 
 .enter {
-  animation-duration: 500ms;
+  animation-duration: 340ms;
   animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
   animation-fill-mode: both;
   animation-name: enterUp;
   will-change: transform, opacity;
 }
 
-.enter--topbar    { animation-name: enterDown; animation-duration: 420ms; animation-delay: 80ms; }
-.enter--pre-title { animation-delay: 200ms; animation-duration: 460ms; }
-.enter--wordmark  { animation-name: enterRise; animation-duration: 760ms; animation-delay: 260ms; }
-.enter--ornament  { animation-delay: 420ms; }
-.enter--keycap    { animation-delay: 500ms; }
-.enter--status    { animation-delay: 580ms; animation-duration: 420ms; }
-.enter--panels    { animation-name: enterFade; animation-duration: 620ms; animation-delay: 660ms; }
-.enter--footer    { animation-name: enterFade; animation-duration: 500ms; animation-delay: 780ms; }
+/* Tightened cadence — the old 1020ms hero-in time felt slow on a Chrome-
+   only app where visitors have already committed. New total ≈ 620ms, with
+   the wordmark arriving by 640ms and footer settled by 820ms. */
+.enter--topbar    { animation-name: enterDown; animation-duration: 320ms; animation-delay: 40ms; }
+.enter--pre-title { animation-duration: 320ms; animation-delay: 120ms; }
+.enter--wordmark  { animation-name: enterRise; animation-duration: 480ms; animation-delay: 160ms; }
+.enter--ornament  { animation-duration: 320ms; animation-delay: 240ms; }
+.enter--keycap    { animation-duration: 320ms; animation-delay: 300ms; }
+.enter--status    { animation-duration: 300ms; animation-delay: 340ms; }
+.enter--panels    { animation-name: enterFade; animation-duration: 420ms; animation-delay: 400ms; }
+.enter--footer    { animation-name: enterFade; animation-duration: 360ms; animation-delay: 460ms; }
 
 @media (prefers-reduced-motion: reduce) {
   .enter,
