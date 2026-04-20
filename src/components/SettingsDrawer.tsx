@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import { X } from "lucide-react";
 import type { Provider, Settings } from "@/types";
-import { LANGUAGES } from "@/lib/languages";
+import { LANGUAGES, languageFlag } from "@/lib/languages";
 import { DEFAULT_MODELS } from "@/lib/constants";
 
 interface Props {
@@ -74,7 +74,7 @@ export function SettingsDrawer({ open, settings, onClose, onChange }: Props) {
                 >
                   {LANGUAGES.map(([code, name]) => (
                     <option key={code} value={code}>
-                      {name} — {code}
+                      {languageFlag(code)} {name} — {code}
                     </option>
                   ))}
                 </select>

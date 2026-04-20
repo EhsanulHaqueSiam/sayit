@@ -1,4 +1,4 @@
-import { LANGUAGES } from "@/lib/languages";
+import { LANGUAGES, languageFlag } from "@/lib/languages";
 
 interface Props {
   value: string;
@@ -27,7 +27,7 @@ export function InlineLanguage({ value, onChange, title }: Props) {
       >
         {LANGUAGES.map(([code, name]) => (
           <option key={code} value={code}>
-            {name} — {code}
+            {languageFlag(code)} {name} — {code}
           </option>
         ))}
       </select>

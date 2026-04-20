@@ -43,3 +43,19 @@ export const LANGUAGES: ReadonlyArray<readonly [string, string]> = [
   ["zh-TW", "中文 (臺灣)"],
   ["zh-HK", "中文 (香港)"],
 ];
+
+function toFlagEmoji(region: string): string {
+  return region
+    .toUpperCase()
+    .replace(
+      /[A-Z]/g,
+      (char) => String.fromCodePoint(127397 + char.charCodeAt(0)),
+    );
+}
+
+export function languageFlag(code: string): string {
+  const parts = code.split("-");
+  const region = parts.find((part) => /^[A-Z]{2}$/.test(part));
+  if (!region) return "🌐";
+  return toFlagEmoji(region);
+}

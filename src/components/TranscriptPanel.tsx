@@ -1,10 +1,18 @@
-import { forwardRef, memo, useEffect, useImperativeHandle, useLayoutEffect, useRef } from "react";
+import {
+  forwardRef,
+  memo,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+  useRef,
+} from "react";
 import { Copy, Download, Trash2 } from "lucide-react";
 import { InlineLanguage } from "./InlineLanguage";
 import { cn, countWords, formatDuration, tsFilename, downloadText } from "@/lib/utils";
 
 export interface TranscriptPanelHandle {
-  /** Append a finalized chunk directly to the DOM — no React render. */
+  /** Insert a finalized chunk at cursor/selection directly in the DOM — no React render. */
   appendFinal: (chunk: string) => void;
   /** Update the inline ghost interim text — no React render. */
   setInterim: (text: string) => void;
@@ -56,11 +64,69 @@ export const TranscriptPanel = memo(
     const editorRef = useRef<HTMLDivElement>(null);
     const committedRef = useRef<HTMLSpanElement>(null);
     const interimRef = useRef<HTMLSpanElement>(null);
+    const lastCaretRangeRef = useRef<Range | null>(null);
     const onTextChangeRef = useRef(onTextChange);
 
     useEffect(() => {
       onTextChangeRef.current = onTextChange;
     }, [onTextChange]);
+
+    const rangeInCommitted = useCallback((range: Range): boolean => {
+      const committed = committedRef.current;
+      if (!committed) return false;
+      return (
+        committed.contains(range.startContainer) &&
+        committed.contains(range.endContainer)
+      );
+    }, []);
+
+    const cacheCaretRange = useCallback(() => {
+      const selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0) return;
+      const range = selection.getRangeAt(0);
+      if (rangeInCommitted(range)) {
+        lastCaretRangeRef.current = range.cloneRange();
+      }
+    }, [rangeInCommitted]);
+
+    const textOffsetFromPoint = useCallback((
+      root: Node,
+      container: Node,
+      offset: number,
+    ): number => {
+      const r = document.createRange();
+      r.selectNodeContents(root);
+      r.setEnd(container, offset);
+      return r.toString().length;
+    }, []);
+
+    const resolveInsertionRange = useCallback((): Range | null => {
+      const committed = committedRef.current;
+      if (!committed) return null;
+
+      const selection = window.getSelection();
+      if (selection && selection.rangeCount > 0) {
+        const active = selection.getRangeAt(0);
+        if (rangeInCommitted(active)) return active.cloneRange();
+      }
+
+      if (lastCaretRangeRef.current && rangeInCommitted(lastCaretRangeRef.current)) {
+        return lastCaretRangeRef.current.cloneRange();
+      }
+
+      const atEnd = document.createRange();
+      atEnd.selectNodeContents(committed);
+      atEnd.collapse(false);
+      return atEnd;
+    }, [rangeInCommitted]);
+
+    useEffect(() => {
+      const onSelectionChange = () => cacheCaretRange();
+      document.addEventListener("selectionchange", onSelectionChange);
+      return () => {
+        document.removeEventListener("selectionchange", onSelectionChange);
+      };
+    }, [cacheCaretRange]);
 
     useImperativeHandle(
       ref,
@@ -68,9 +134,34 @@ export const TranscriptPanel = memo(
         appendFinal(chunk) {
           const span = committedRef.current;
           if (!span) return;
+          const range = resolveInsertionRange();
+          if (!range) return;
           const cur = span.textContent ?? "";
-          const sep = cur && !/\s$/.test(cur) ? " " : "";
-          span.appendChild(document.createTextNode(sep + chunk));
+          const start = textOffsetFromPoint(
+            span,
+            range.startContainer,
+            range.startOffset,
+          );
+          const end = textOffsetFromPoint(span, range.endContainer, range.endOffset);
+          const left = start > 0 ? cur[start - 1] : "";
+          const right = end < cur.length ? cur[end] : "";
+          const needsLeadingSpace = !!left && !/\s/.test(left);
+          const needsTrailingSpace = !!right && !/\s/.test(right);
+          const payload = `${needsLeadingSpace ? " " : ""}${chunk}${needsTrailingSpace ? " " : ""}`;
+
+          range.deleteContents();
+          const node = document.createTextNode(payload);
+          range.insertNode(node);
+
+          const selection = window.getSelection();
+          if (selection) {
+            const after = document.createRange();
+            after.setStartAfter(node);
+            after.collapse(true);
+            selection.removeAllRanges();
+            selection.addRange(after);
+            lastCaretRangeRef.current = after.cloneRange();
+          }
           const interim = interimRef.current;
           if (interim) interim.textContent = "";
           onTextChangeRef.current(span.textContent ?? "");
@@ -88,13 +179,23 @@ export const TranscriptPanel = memo(
           if (c) c.textContent = "";
           const i = interimRef.current;
           if (i) i.textContent = "";
+          lastCaretRangeRef.current = null;
         },
         setText(t) {
           const c = committedRef.current;
           if (c) c.textContent = t;
+          const selection = window.getSelection();
+          if (c && selection) {
+            const atEnd = document.createRange();
+            atEnd.selectNodeContents(c);
+            atEnd.collapse(false);
+            selection.removeAllRanges();
+            selection.addRange(atEnd);
+            lastCaretRangeRef.current = atEnd.cloneRange();
+          }
         },
       }),
-      [],
+      [resolveInsertionRange, textOffsetFromPoint],
     );
 
     // One-shot hydration on mount: seed the DOM with whatever text arrived
@@ -126,6 +227,7 @@ export const TranscriptPanel = memo(
           span.appendChild(node);
         }
       }
+      cacheCaretRange();
       onTextChangeRef.current(span.textContent ?? "");
     };
 
@@ -182,6 +284,9 @@ export const TranscriptPanel = memo(
           role="textbox"
           aria-label="Transcript"
           onInput={handleInput}
+          onMouseUp={cacheCaretRange}
+          onKeyUp={cacheCaretRange}
+          onBlur={cacheCaretRange}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey && onEnter) {
               e.preventDefault();

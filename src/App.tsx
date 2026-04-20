@@ -289,8 +289,8 @@ export default function App() {
 
   // ---- Hotkeys ----
   // Hold Space to talk, release to stop. Enabled over <select> so hitting
-  // Space right after picking a language still works. Still disabled over
-  // inputs / textareas / contenteditable so typing a space inserts a space.
+  // Space right after picking a language still works. Also enabled over
+  // contenteditable so cursor-position dictation works while editing text.
   const spaceHeldRef = useRef(false);
   const [spaceHeld, setSpaceHeld] = useState(false);
 
@@ -309,7 +309,7 @@ export default function App() {
       keydown: true,
       keyup: false,
       enableOnFormTags: ["select"],
-      enableOnContentEditable: false,
+      enableOnContentEditable: true,
       preventDefault: true,
     },
     [listening, start, canDictate],
@@ -328,7 +328,7 @@ export default function App() {
       keydown: false,
       keyup: true,
       enableOnFormTags: ["select"],
-      enableOnContentEditable: false,
+      enableOnContentEditable: true,
     },
     [stop],
   );
