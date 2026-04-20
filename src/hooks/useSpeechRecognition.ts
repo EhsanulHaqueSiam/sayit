@@ -36,6 +36,30 @@ export function useSpeechRecognition(
     typeof window !== "undefined" &&
     !!(window.SpeechRecognition || window.webkitSpeechRecognition);
 
+  const tryStart = useCallback(
+    (r: SpeechRecognitionInstance, source: "manual" | "restart"): boolean => {
+      try {
+        r.start();
+        return true;
+      } catch (err) {
+        const name =
+          err instanceof DOMException
+            ? err.name
+            : err instanceof Error
+              ? err.name
+              : "UnknownError";
+        // SpeechRecognition throws InvalidStateError when already running.
+        if (name === "InvalidStateError") return false;
+        shouldRestartRef.current = false;
+        listeningRef.current = false;
+        setListening(false);
+        onError?.(source === "restart" ? `restart-${name}` : `start-${name}`);
+        return false;
+      }
+    },
+    [onError],
+  );
+
   const getOrCreate = useCallback((): SpeechRecognitionInstance | null => {
     if (recogRef.current) return recogRef.current;
     const Ctor = window.SpeechRecognition ?? window.webkitSpeechRecognition;
@@ -54,12 +78,7 @@ export function useSpeechRecognition(
     };
     r.onend = () => {
       if (shouldRestartRef.current) {
-        try {
-          r.start();
-          return;
-        } catch {
-          /* ignore restart failure and fall through to stop */
-        }
+        if (tryStart(r, "restart")) return;
       }
       listeningRef.current = false;
       setListening(false);
@@ -78,7 +97,7 @@ export function useSpeechRecognition(
 
     recogRef.current = r;
     return r;
-  }, [onError, onFinal, onInterim, onAutoEnd]);
+  }, [onError, onFinal, onInterim, onAutoEnd, tryStart]);
 
   const start = useCallback(() => {
     const r = getOrCreate();
@@ -86,12 +105,8 @@ export function useSpeechRecognition(
     r.lang = language;
     r.continuous = continuous;
     shouldRestartRef.current = continuous;
-    try {
-      r.start();
-    } catch {
-      /* already started */
-    }
-  }, [continuous, getOrCreate, language]);
+    tryStart(r, "manual");
+  }, [continuous, getOrCreate, language, tryStart]);
 
   const stop = useCallback(() => {
     shouldRestartRef.current = false;

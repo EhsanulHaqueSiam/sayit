@@ -21,7 +21,7 @@ import type { PresetKey, Settings, Theme } from "@/types";
 const THEME_ORDER: Theme[] = ["", "dark", "light"];
 const NOTICE_DISMISSED_KEY = "sayit.unsupported-dismissed.v1";
 const LIVE_TRANSLATE_DEBOUNCE_MS = 180;
-const SPACE_HOLD_TO_TALK_MS = 140;
+const SPACE_TAP_INSERT_MS = 140;
 
 interface RunAIOptions {
   promptForTranslateTarget?: boolean;
@@ -293,16 +293,9 @@ export default function App() {
   // Space right after picking a language still works. Also enabled over
   // contenteditable so cursor-position dictation works while editing text.
   const spaceHeldRef = useRef(false);
-  const spaceArmTimerRef = useRef<number | null>(null);
+  const spacePressStartedAtRef = useRef<number | null>(null);
   const spaceFromEditableRef = useRef(false);
   const [spaceHeld, setSpaceHeld] = useState(false);
-
-  const clearSpaceArmTimer = useCallback(() => {
-    if (spaceArmTimerRef.current !== null) {
-      window.clearTimeout(spaceArmTimerRef.current);
-      spaceArmTimerRef.current = null;
-    }
-  }, []);
 
   const insertSpaceIntoActiveEditor = useCallback(() => {
     const active = document.activeElement;
@@ -321,66 +314,74 @@ export default function App() {
     active.dispatchEvent(new Event("input", { bubbles: true }));
   }, []);
 
-  useHotkeys(
-    "space",
-    (e) => {
-      if (!canDictate) return;
-      const target = e.target;
-      const fromEditable = target instanceof HTMLElement && target.isContentEditable;
-      if (fromEditable) {
-        e.preventDefault();
-        if (spaceHeldRef.current || listening || spaceArmTimerRef.current !== null) return;
-        spaceFromEditableRef.current = true;
-        spaceArmTimerRef.current = window.setTimeout(() => {
-          spaceArmTimerRef.current = null;
-          if (spaceHeldRef.current || listening) return;
-          spaceHeldRef.current = true;
-          setSpaceHeld(true);
-          start();
-        }, SPACE_HOLD_TO_TALK_MS);
-        return;
-      }
-      if (!listening && !spaceHeldRef.current) {
-        e.preventDefault();
-        spaceHeldRef.current = true;
-        setSpaceHeld(true);
-        start();
-      }
-    },
-    {
-      keydown: true,
-      keyup: false,
-      enableOnFormTags: ["select"],
-      enableOnContentEditable: true,
-      preventDefault: true,
-    },
-    [listening, start, canDictate],
-  );
+  useEffect(() => {
+    const isSpaceKey = (e: KeyboardEvent) => e.code === "Space" || e.key === " ";
+    const inEditable = (target: EventTarget | null) =>
+      target instanceof HTMLElement &&
+      (target.isContentEditable ||
+        Boolean(target.closest("[contenteditable='true']")));
+    const inBlockedTextField = (target: EventTarget | null) =>
+      target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
+    const inSelect = (target: EventTarget | null) => target instanceof HTMLSelectElement;
+    const inBlockedInteractive = (target: EventTarget | null) =>
+      target instanceof HTMLElement &&
+      Boolean(
+        target.closest(
+          "button,a,[role='button'],[role='checkbox'],[role='switch']",
+        ),
+      );
 
-  useHotkeys(
-    "space",
-    () => {
-      if (spaceArmTimerRef.current !== null) {
-        clearSpaceArmTimer();
-        if (spaceFromEditableRef.current) insertSpaceIntoActiveEditor();
-        spaceFromEditableRef.current = false;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!isSpaceKey(e)) return;
+      const target = e.target;
+      const fromEditable = inEditable(target);
+      const fromSelect = inSelect(target);
+      if (
+        !fromEditable &&
+        !fromSelect &&
+        (inBlockedTextField(target) || inBlockedInteractive(target))
+      ) {
         return;
       }
+      if (!canDictate) return;
+
+      e.preventDefault();
+      if (spaceHeldRef.current || listening) return;
+      spaceFromEditableRef.current = fromEditable;
+      spacePressStartedAtRef.current = Date.now();
+      spaceHeldRef.current = true;
+      setSpaceHeld(true);
+      start();
+    };
+
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (!isSpaceKey(e)) return;
+      if (!spaceHeldRef.current && spacePressStartedAtRef.current === null) return;
+      e.preventDefault();
+      const startedAt = spacePressStartedAtRef.current;
+      spacePressStartedAtRef.current = null;
       if (spaceHeldRef.current) {
         spaceHeldRef.current = false;
         setSpaceHeld(false);
         stop();
       }
+      if (
+        spaceFromEditableRef.current &&
+        startedAt !== null &&
+        Date.now() - startedAt <= SPACE_TAP_INSERT_MS
+      ) {
+        insertSpaceIntoActiveEditor();
+      }
       spaceFromEditableRef.current = false;
-    },
-    {
-      keydown: false,
-      keyup: true,
-      enableOnFormTags: ["select"],
-      enableOnContentEditable: true,
-    },
-    [clearSpaceArmTimer, insertSpaceIntoActiveEditor, stop],
-  );
+    };
+
+    window.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("keyup", onKeyUp, true);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("keyup", onKeyUp, true);
+    };
+  }, [canDictate, insertSpaceIntoActiveEditor, listening, start, stop]);
 
   useHotkeys(
     "escape",
@@ -392,7 +393,7 @@ export default function App() {
   // If the window loses focus mid-hold (alt-tab, etc.), clear state.
   useEffect(() => {
     const blur = () => {
-      clearSpaceArmTimer();
+      spacePressStartedAtRef.current = null;
       spaceFromEditableRef.current = false;
       if (spaceHeldRef.current) {
         spaceHeldRef.current = false;
@@ -402,9 +403,7 @@ export default function App() {
     };
     window.addEventListener("blur", blur);
     return () => window.removeEventListener("blur", blur);
-  }, [clearSpaceArmTimer, stop]);
-
-  useEffect(() => clearSpaceArmTimer, [clearSpaceArmTimer]);
+  }, [stop]);
 
   // ---- Actions ----
   const copyTarget = async (kind: "raw" | "ai") => {
