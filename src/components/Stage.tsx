@@ -1,4 +1,5 @@
 import { motion } from "motion/react";
+import { Mic } from "lucide-react";
 import { Keycap } from "./Keycap";
 import type { Mode } from "@/types";
 import type { AudioMeterApi } from "@/hooks/useAudioMeter";
@@ -14,9 +15,13 @@ interface Props {
 }
 
 /**
- * Hero. The wordmark "Say." is clickable, and a prominent keycap underneath
- * teaches the hold-Space affordance. Editorial ornaments frame the whole
- * composition.
+ * Hero. The wordmark "Say." IS the primary button, but it previously had
+ * no button affordance — users couldn't tell. The fix:
+ *   1. A breathing italic pre-title above: "tap to speak" + mic icon.
+ *   2. A persistent dotted underline under the wordmark.
+ *   3. Strong hover state: scale, period glow, dashed frame fade-in.
+ *   4. Focus ring for keyboard nav.
+ *   5. Dropped the redundant "Click the word to toggle." footnote.
  */
 export function Stage({
   listening,
@@ -30,7 +35,7 @@ export function Stage({
   return (
     <section
       className={`relative flex flex-col items-center
-                  pt-14 pb-12 md:pt-20 md:pb-16
+                  pt-10 pb-12 md:pt-16 md:pb-16
                   ${listening ? "is-listening" : ""}`}
     >
       {/* Asymmetric editorial callouts floating at the corners */}
@@ -55,31 +60,97 @@ export function Stage({
       {/* Thin editorial rule behind the wordmark */}
       <div
         aria-hidden
-        className="absolute top-[46%] left-0 right-0 -translate-y-1/2
-                   mx-auto w-[min(780px,72%)] h-px rule opacity-50"
+        className="absolute top-[50%] left-0 right-0 -translate-y-1/2
+                   mx-auto w-[min(780px,72%)] h-px rule opacity-40"
       />
+
+      {/* Pre-title — the annotation that makes Say. legibly interactive.
+          Breathes gently up/down so the eye is drawn to it. */}
+      <motion.div
+        className="relative z-10 mb-3 md:mb-5 flex items-center gap-2
+                   text-[var(--color-ink-faint)]"
+        animate={canDictate && !listening ? { y: [0, -3, 0] } : { y: 0 }}
+        transition={{ duration: 2.6, repeat: Infinity, ease: "easeInOut" }}
+        aria-hidden
+      >
+        <Mic size={14} strokeWidth={1.6} />
+        <span className="font-display italic text-[15px] md:text-[17px] tracking-[0.01em]">
+          tap to speak
+        </span>
+        <svg
+          width="28"
+          height="10"
+          viewBox="0 0 28 10"
+          fill="none"
+          className="text-[var(--color-ink-faint)]"
+        >
+          <path
+            d="M1 5 L24 5"
+            stroke="currentColor"
+            strokeWidth="1"
+            strokeDasharray="2 3"
+            strokeLinecap="round"
+          />
+          <path
+            d="M20 1 L25 5 L20 9"
+            stroke="currentColor"
+            strokeWidth="1"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            fill="none"
+          />
+        </svg>
+      </motion.div>
 
       {/* Wordmark as the button */}
       <motion.button
         onClick={onToggle}
-        layout
         initial={false}
         animate={{ scale: listening ? 1.012 : 1 }}
-        whileTap={{ scale: 0.985 }}
-        transition={{ type: "spring", stiffness: 320, damping: 26 }}
+        whileHover={canDictate ? { scale: 1.018 } : undefined}
+        whileTap={canDictate ? { scale: 0.985 } : undefined}
+        transition={{ type: "spring", stiffness: 340, damping: 24 }}
         aria-pressed={listening}
         aria-label={listening ? "Stop dictation" : "Start dictation"}
         disabled={!canDictate}
-        className={`group relative z-10 bg-transparent border-0 cursor-pointer
-                    text-[var(--color-ink)] px-4 py-2
-                    disabled:cursor-not-allowed disabled:opacity-50`}
+        className="group relative z-10 bg-transparent cursor-pointer
+                   text-[var(--color-ink)] px-6 py-3 rounded-[24px]
+                   border border-transparent
+                   hover:border-[color-mix(in_srgb,var(--color-ink-faint)_55%,transparent)]
+                   hover:border-dashed
+                   focus-visible:outline-none
+                   focus-visible:border-[var(--color-accent)]
+                   focus-visible:border-dashed
+                   disabled:cursor-not-allowed disabled:opacity-40
+                   transition-[border-color] duration-200"
       >
         <span className="wordmark wordmark-pulse block text-[clamp(120px,21vw,252px)]">
-          Say<span className="text-[var(--color-accent)] not-italic">.</span>
+          Say
+          <span
+            className="text-[var(--color-accent)] not-italic inline-block
+                       transition-transform duration-300 ease-out
+                       group-hover:scale-110"
+          >
+            .
+          </span>
         </span>
+
+        {/* Always-visible dotted underline that brightens on hover —
+            the tap-affordance users missed. */}
         <span
           aria-hidden
-          className="wordmark-sweep absolute left-4 right-4 bottom-2 h-[3px]
+          className="absolute left-8 right-8 bottom-1 h-[2px]
+                     bg-transparent
+                     bg-[repeating-linear-gradient(to_right,var(--color-ink-faint)_0_3px,transparent_3px_7px)]
+                     opacity-35
+                     group-hover:opacity-75 group-hover:bg-[repeating-linear-gradient(to_right,var(--color-accent)_0_3px,transparent_3px_7px)]
+                     transition-opacity duration-200"
+        />
+
+        {/* Sweep bar — only visible while actively listening */}
+        <span
+          aria-hidden
+          className="wordmark-sweep absolute left-4 right-4 bottom-[-4px] h-[3px]
                      rounded-full bg-[var(--color-accent)] opacity-0"
           style={{
             opacity: listening ? 1 : 0,
@@ -88,11 +159,12 @@ export function Stage({
         />
       </motion.button>
 
-      {/* Ornament + keycap instruction */}
-      <div className="ornament mt-2 mb-5 w-full max-w-[520px] px-4">
+      {/* Ornament */}
+      <div className="ornament mt-4 mb-5 w-full max-w-[520px] px-4">
         <span aria-hidden>§</span>
       </div>
 
+      {/* Space keycap — secondary affordance */}
       <div className="flex items-center gap-4 flex-wrap justify-center">
         <span className="side-note text-[17px]">or hold</span>
         <Keycap
@@ -123,15 +195,13 @@ export function Stage({
         <span>{mode === "ai" ? "AI polish" : "raw"}</span>
       </div>
 
-      <p className="mt-3 text-sm text-[var(--color-ink-faint)] text-center text-balance max-w-md">
-        Click the word to toggle.
-        {mode === "ai" && (
-          <>
-            {" "}
-            <kbd>Enter</kbd> in the transcript runs the active preset.
-          </>
-        )}
-      </p>
+      {/* Only shown in AI mode now — the Enter tip. The "click the word"
+          footnote was redundant with the new pre-title above. */}
+      {mode === "ai" && (
+        <p className="mt-3 text-xs text-[var(--color-ink-faint)] text-center text-balance max-w-md">
+          <kbd>Enter</kbd> in the transcript runs the active preset.
+        </p>
+      )}
     </section>
   );
 }
