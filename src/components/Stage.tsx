@@ -1,5 +1,4 @@
-import { useEffect, useRef } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
 import { Mic } from "lucide-react";
 import { AudioMeter } from "./AudioMeter";
 import { Keycap } from "./Keycap";
@@ -23,10 +22,23 @@ const STAGE_EASE = [0.16, 1, 0.3, 1] as const;
  * compact focus strip so the transcript can fill the viewport.
  */
 export function Stage(props: Props) {
+  // Dropped `mode="wait"` so both the full stage and focus strip can be
+  // mounted briefly during the transition. This lets Motion's layoutId
+  // morph the "Say." wordmark as a shared element between them — the
+  // same glyph travels from hero-center at 252px down to the focus
+  // strip at 40px, carrying the user's eye across the change.
+  //
+  // Anticipation: also swap when Space is just *held*, not only when
+  // recognition has confirmed. The engine start can lag 10–100ms after
+  // the physical key repeat — that gap is enough to make hold-Space feel
+  // snappy. Starting the morph on `spaceHeld` eliminates the stall, and
+  // the audio wave simply sits at idle scale for the ~50ms before the
+  // meter catches up.
+  const inFocusMode = props.listening || props.spaceHeld;
   return (
     <section className="relative">
-      <AnimatePresence mode="wait" initial={false}>
-        {props.listening ? (
+      <AnimatePresence initial={false}>
+        {inFocusMode ? (
           <FocusStrip key="focus" {...props} />
         ) : (
           <FullStage key="full" {...props} />
@@ -35,6 +47,26 @@ export function Stage(props: Props) {
     </section>
   );
 }
+
+// Strong ease-out — matches the --ease-out-strong CSS variable so the
+// whole app speaks one motion language.
+const CHILD_EXIT_EASE = [0.23, 1, 0.32, 1] as const;
+const CHILD_EXIT_DUR = 0.2;
+
+/** Per-child exit: fade out + 4px up-drift, staggered by `delay` seconds.
+ *  `initial={false}` means Motion won't play an entry (CSS .enter--*
+ *  handles first mount; coming back from focus mode also re-fires the
+ *  CSS cascade because the wrapper remounts). Tighter timing so the
+ *  stage clears BEFORE the wordmark's spring settles — the glyph then
+ *  travels through a quiet field for its final ~230ms. */
+const childExit = (delay: number) => ({
+  initial: false as const,
+  exit: {
+    opacity: 0,
+    transform: "translateY(-4px)",
+    transition: { duration: CHILD_EXIT_DUR, delay, ease: CHILD_EXIT_EASE },
+  },
+});
 
 function FullStage({
   listening,
@@ -45,18 +77,28 @@ function FullStage({
   meter,
   onToggle,
 }: Props) {
+  // No opacity fade on the wrapper — each non-wordmark child handles
+  // its own fade so the wordmark span (layoutId) is never fighting an
+  // inherited parent-opacity fade during its morph. The empty `exit`
+  // keeps the wrapper in AnimatePresence's exit-tracking set so it
+  // waits for all descendant child exits before unmounting.
   return (
     <motion.div
-      initial={{ opacity: 0, y: 18 }}
+      initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -14 }}
-      transition={{ duration: 0.42, ease: STAGE_EASE }}
+      exit={{ transition: { when: "afterChildren", duration: 0 } }}
+      transition={{
+        duration: 0.5,
+        ease: STAGE_EASE,
+        delay: listening ? 0 : 0.12,
+      }}
       className={`relative flex flex-col items-center
                   pt-10 pb-12 md:pt-16 md:pb-16
                   ${listening ? "is-listening" : ""}`}
     >
       {/* Thin editorial rule behind the wordmark */}
-      <div
+      <motion.div
+        {...childExit(0.02)}
         aria-hidden
         className="absolute top-[50%] left-0 right-0 -translate-y-1/2
                    mx-auto w-[min(780px,72%)] h-px rule opacity-40"
@@ -65,7 +107,11 @@ function FullStage({
       {/* Pre-title — the annotation that makes Say. legibly interactive.
           Outer wrapper handles page-load entrance; inner motion handles the
           idle bobbing so the two transforms don't fight. */}
-      <div className="enter enter--pre-title relative z-10 mb-3 md:mb-5" aria-hidden>
+      <motion.div
+        {...childExit(0)}
+        className="enter enter--pre-title relative z-10 mb-3 md:mb-5"
+        aria-hidden
+      >
       <motion.div
         className="flex items-center gap-2 text-[var(--color-ink-faint)]"
         animate={canDictate && !listening ? { y: [0, -3, 0] } : { y: 0 }}
@@ -99,17 +145,20 @@ function FullStage({
           />
         </svg>
       </motion.div>
-      </div>
+      </motion.div>
 
       {/* Wordmark as the button — wrapped in a static div so the page-load
-          entrance (transform animation) doesn't fight Motion's scale. */}
+          entrance (transform animation) doesn't fight Motion's scale.
+          NOTE: no exit animation on this wrapper. The span inside uses
+          layoutId to morph to the focus strip — it must stay at full
+          opacity through the transition for the shared-element handoff
+          to feel premium. */}
       <div className="enter enter--wordmark relative z-10">
       <motion.button
         onClick={onToggle}
         initial={false}
-        animate={{ scale: listening ? 1.012 : 1 }}
         whileHover={canDictate ? { scale: 1.018 } : undefined}
-        whileTap={canDictate ? { scale: 0.985 } : undefined}
+        whileTap={canDictate ? { scale: 0.97 } : undefined}
         transition={{ type: "spring", stiffness: 340, damping: 24 }}
         aria-pressed={listening}
         aria-label={listening ? "Stop dictation" : "Start dictation"}
@@ -125,21 +174,23 @@ function FullStage({
                    disabled:cursor-not-allowed disabled:opacity-40
                    transition-[border-color] duration-200"
       >
-        {/* Wordmark text — fades out into blur when listening starts, returns
-            with an inkBleed-like ease-out-expo reveal on release. */}
+        {/* Wordmark text — crossfades out upward when listening starts.
+            We tried layoutId for the shared-element morph, but Motion
+            animates size via transform: scale(), and at a ~6.3× font-size
+            delta (252px → 40px) the text rasters stretch to catastrophic
+            blur. Native font rendering requires rasters at each target
+            size — so the big and small wordmarks are separate elements
+            that crossfade in reverse directions (big fades up and out,
+            small fades in from below) to preserve the directional feel
+            without the blur artifact. */}
         <motion.span
           className="wordmark wordmark-pulse block text-[clamp(120px,21vw,252px)]"
           initial={false}
-          animate={
-            listening
-              ? { opacity: 0, filter: "blur(4px)", letterSpacing: "-0.02em" }
-              : { opacity: 1, filter: "blur(0px)", letterSpacing: "-0.04em" }
-          }
-          transition={
-            listening
-              ? { duration: 0.14, ease: [0.22, 1, 0.36, 1] }
-              : { duration: 0.36, ease: [0.16, 1, 0.3, 1], delay: 0.16 }
-          }
+          exit={{
+            opacity: 0,
+            transform: "translateY(-24px) scale(0.96)",
+            transition: { duration: 0.32, ease: [0.23, 1, 0.32, 1] },
+          }}
         >
           Say
           <span
@@ -151,12 +202,8 @@ function FullStage({
           </span>
         </motion.span>
 
-        {/* Live audio-wave overlay — emerges from center on listening start */}
-        <WordmarkWave meter={meter} active={listening} />
-
-        {/* Always-visible dotted underline that brightens on hover —
-            the tap-affordance users missed. Hides during listening to give
-            the wave full stage. */}
+        {/* Always-visible dotted underline that brightens on hover — the
+            tap-affordance users missed. */}
         <motion.span
           aria-hidden
           className="absolute left-8 right-8 bottom-1 h-[2px]
@@ -164,31 +211,26 @@ function FullStage({
                      bg-[repeating-linear-gradient(to_right,var(--color-ink-faint)_0_3px,transparent_3px_7px)]
                      group-hover:bg-[repeating-linear-gradient(to_right,var(--color-accent)_0_3px,transparent_3px_7px)]"
           initial={false}
-          animate={{ opacity: listening ? 0 : 0.35 }}
-          whileHover={listening ? undefined : { opacity: 0.75 }}
+          animate={{ opacity: 0.35 }}
+          whileHover={{ opacity: 0.75 }}
           transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-        />
-
-        {/* Sweep bar — only visible while actively listening */}
-        <span
-          aria-hidden
-          className="wordmark-sweep absolute left-4 right-4 bottom-[-4px] h-[3px]
-                     rounded-full bg-[var(--color-accent)] opacity-0"
-          style={{
-            opacity: listening ? 1 : 0,
-            transform: listening ? undefined : "scaleX(0)",
-          }}
         />
       </motion.button>
       </div>
 
       {/* Ornament */}
-      <div className="enter enter--ornament ornament mt-4 mb-5 w-full max-w-[520px] px-4">
+      <motion.div
+        {...childExit(0.03)}
+        className="enter enter--ornament ornament mt-4 mb-5 w-full max-w-[520px] px-4"
+      >
         <span aria-hidden>§</span>
-      </div>
+      </motion.div>
 
       {/* Space keycap — secondary affordance */}
-      <div className="enter enter--keycap flex items-center gap-4 flex-wrap justify-center">
+      <motion.div
+        {...childExit(0.06)}
+        className="enter enter--keycap flex items-center gap-4 flex-wrap justify-center"
+      >
         <span className="side-note text-[17px]">or hold</span>
         <Keycap
           pressed={listening || spaceHeld}
@@ -197,20 +239,22 @@ function FullStage({
           meter={meter}
         />
         <span className="side-note text-[17px]">to talk</span>
-      </div>
+      </motion.div>
 
       {/* Space-tap-vs-hold teaching — surfaces the hidden behaviour */}
-      <p
+      <motion.p
+        {...childExit(0.08)}
         className="enter enter--status mt-2 text-[13px]
                    font-display italic text-[var(--color-ink-faint)]
                    text-center max-w-[42ch]"
       >
         In the editor: hold Space to dictate at the cursor, tap Space for a
         space.
-      </p>
+      </motion.p>
 
       {/* Status line */}
-      <div
+      <motion.div
+        {...childExit(0.1)}
         className="enter enter--status mt-4 flex items-center gap-3 text-[11px] tracking-[0.24em]
                    uppercase font-mono text-[var(--color-ink-faint)]"
       >
@@ -226,19 +270,23 @@ function FullStage({
         <span className="lg:hidden">{language}</span>
         <span aria-hidden className="lg:hidden">/</span>
         <span>{mode === "ai" ? "AI polish" : "raw"}</span>
-      </div>
+      </motion.div>
 
       {/* Only shown in AI mode now — the Enter tip. The "click the word"
           footnote was redundant with the new pre-title above. */}
       {mode === "ai" && (
-        <p className="mt-3 text-xs text-[var(--color-ink-faint)] text-center text-balance max-w-md">
+        <motion.p
+          {...childExit(0.12)}
+          className="mt-3 text-xs text-[var(--color-ink-faint)] text-center text-balance max-w-md"
+        >
           <kbd>Enter</kbd> in the transcript runs the active preset.
-        </p>
+        </motion.p>
       )}
 
       {/* Trust ribbon — surfaces the privacy story on first paint instead
           of burying it in an 11px footer */}
-      <div
+      <motion.div
+        {...childExit(0.14)}
         className="enter enter--status mt-6 flex items-center gap-3
                    font-display italic text-[14px] md:text-[15px]
                    leading-snug text-[var(--color-ink-faint)]
@@ -256,7 +304,7 @@ function FullStage({
           aria-hidden
           className="hidden sm:inline-flex h-px w-10 bg-[var(--color-line)]"
         />
-      </div>
+      </motion.div>
     </motion.div>
   );
 }
@@ -273,16 +321,16 @@ function FocusStrip({
   spaceHeld,
 }: Props) {
   return (
+    // No wrapper opacity fade — the wordmark morph IS the entrance.
+    // Supporting children (wave, hint) handle their own entry/exit.
+    // Keeping the wrapper mounted in a transparent state gives the
+    // morph a single focal object with no competing fade.
     <motion.div
-      initial={{ opacity: 0, y: -16, scale: 0.98 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: -10, scale: 0.99 }}
-      transition={{ duration: 0.38, ease: STAGE_EASE }}
       className="relative is-listening flex items-center justify-center
                  gap-5 md:gap-8 pt-6 pb-4 md:pt-8 md:pb-5"
     >
-      {/* Tiny italic "Say." mini-wordmark — still a button so click/space
-          release logic is obvious on desktop */}
+      {/* Tiny italic "Say." mini-wordmark — the morph target. Motion's
+          layoutId carries the same glyph from the hero here. */}
       <button
         onClick={onToggle}
         disabled={!canDictate}
@@ -291,28 +339,68 @@ function FocusStrip({
                    bg-transparent cursor-pointer text-[var(--color-ink)]
                    px-2 py-1 rounded-md focus-visible:outline-none"
       >
-        <span
+        {/* Small wordmark enters from below as the big one fades out
+            above. Same directional language as a morph, sharp at both
+            ends because each wordmark renders at its native font-size. */}
+        <motion.span
           className="wordmark font-display italic
                      text-[32px] md:text-[40px] leading-none
-                     tracking-[-0.03em]"
+                     tracking-[-0.03em] whitespace-nowrap"
+          initial={{
+            opacity: 0,
+            transform: "translateY(18px) scale(0.92)",
+          }}
+          animate={{
+            opacity: 1,
+            transform: "translateY(0px) scale(1)",
+          }}
+          exit={{
+            opacity: 0,
+            transform: "translateY(10px) scale(0.94)",
+            transition: { duration: 0.2, ease: [0.23, 1, 0.32, 1] },
+          }}
+          transition={{
+            duration: 0.38,
+            delay: 0.12,
+            ease: [0.23, 1, 0.32, 1],
+          }}
         >
           Say
           <span className="text-[var(--color-accent)] not-italic">.</span>
-        </span>
+        </motion.span>
       </button>
 
-      {/* Live audio wave — middle of the strip, the "voice is being heard"
-          affordance. Reuses the imperative AudioMeter (zero React renders). */}
-      <div
+      {/* Live audio wave — anchored AFTER the wordmark has committed to
+          its new position, so the eye finishes the glyph handoff before
+          new content competes for focus. */}
+      <motion.div
         aria-hidden
+        initial={{ opacity: 0, scale: 0.92 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.94 }}
+        transition={{
+          duration: 0.32,
+          delay: 0.3,
+          ease: [0.23, 1, 0.32, 1],
+        }}
         className="flex items-center h-[44px] md:h-[52px]
                    text-[var(--color-accent)]"
       >
         <AudioMeter meter={meter} bars={13} className="h-full gap-[4px]" idle={0.12} />
-      </div>
+      </motion.div>
 
-      {/* Right-side rec label + release hint */}
-      <div className="flex items-center gap-3 md:gap-5">
+      {/* Rec label + release hint — the final polish, arrives last */}
+      <motion.div
+        initial={{ opacity: 0, transform: "translateY(4px)" }}
+        animate={{ opacity: 1, transform: "translateY(0px)" }}
+        exit={{ opacity: 0, transform: "translateY(4px)" }}
+        transition={{
+          duration: 0.24,
+          delay: 0.4,
+          ease: [0.23, 1, 0.32, 1],
+        }}
+        className="flex items-center gap-3 md:gap-5"
+      >
         <span
           className="inline-flex items-center gap-2
                      font-display italic text-[16px] md:text-[19px]
@@ -342,99 +430,8 @@ function FocusStrip({
             </>
           )}
         </span>
-      </div>
+      </motion.div>
     </motion.div>
   );
 }
 
-/**
- * Signature interaction — the audio-wave morph.
- *
- * Seven accent-colored bars layered over the wordmark. When `active` becomes
- * true, bars emerge from center outward (staggered 24ms per step, 280ms ease-
- * out-expo). While active, each bar's scaleY is written directly by the audio
- * meter — zero React renders. On release, bars collapse center-out in reverse
- * (220ms ease-out-quart), then the wordmark text fades back in.
- *
- * Reduced-motion: bars fade uniformly over 180ms; audio-driven scaleY stays
- * (it reflects real audio, not decoration).
- */
-const BAR_COUNT = 7;
-const CENTER_IDX = (BAR_COUNT - 1) / 2;
-
-function WordmarkWave({
-  meter,
-  active,
-}: {
-  meter: AudioMeterApi;
-  active: boolean;
-}) {
-  const reducedMotion = useReducedMotion();
-  const barRefs = useRef<(HTMLSpanElement | null)[]>([]);
-
-  useEffect(() => {
-    if (!active) return;
-    const phases = Array.from({ length: BAR_COUNT }, (_, i) => i * 0.7);
-    return meter.attach((level) => {
-      const t = performance.now() / 120;
-      for (let i = 0; i < barRefs.current.length; i++) {
-        const bar = barRefs.current[i];
-        if (!bar) continue;
-        // Center-weighted envelope: middle bars have more range than edges
-        const weight = 1 - (Math.abs(i - CENTER_IDX) / (CENTER_IDX + 1)) * 0.45;
-        const shimmer = 0.88 + 0.12 * Math.sin(t + phases[i]);
-        const h = 0.2 + level * shimmer * weight * (1 - 0.2);
-        bar.style.transform = `scaleY(${Math.max(0.2, Math.min(1, h))})`;
-      }
-    });
-  }, [meter, active]);
-
-  return (
-    <div
-      aria-hidden
-      className="absolute inset-0 flex items-center justify-center
-                 gap-[clamp(6px,1.1vw,14px)] pointer-events-none"
-    >
-      {Array.from({ length: BAR_COUNT }).map((_, i) => {
-        const distance = Math.abs(i - CENTER_IDX);
-        // On reveal, center fires first. On hide, edges fire first (reverse).
-        const stagger = reducedMotion
-          ? 0
-          : active
-            ? distance * 0.024
-            : (CENTER_IDX - distance) * 0.018;
-        return (
-          <motion.span
-            key={i}
-            initial={false}
-            animate={{ opacity: active ? 1 : 0 }}
-            transition={{
-              duration: reducedMotion ? 0.18 : active ? 0.28 : 0.22,
-              delay: stagger,
-              ease: active ? [0.16, 1, 0.3, 1] : [0.22, 1, 0.36, 1],
-            }}
-            className="flex items-center justify-center"
-            style={{
-              width: "clamp(7px, 1.1vw, 14px)",
-              height: "58%",
-            }}
-          >
-            <span
-              ref={(el) => {
-                barRefs.current[i] = el;
-              }}
-              className="block w-full h-full rounded-full"
-              style={{
-                background: "var(--color-accent)",
-                transformOrigin: "center",
-                transform: "scaleY(0.2)",
-                transition: "transform 60ms linear",
-                willChange: "transform",
-              }}
-            />
-          </motion.span>
-        );
-      })}
-    </div>
-  );
-}

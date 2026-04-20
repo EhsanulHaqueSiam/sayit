@@ -112,20 +112,21 @@ export function InlineLanguage({ value, onChange, title }: Props) {
         {open && (
           <motion.div
             role="listbox"
+            // Full transform string keeps the popover entrance on the GPU.
             initial={
               reducedMotion
                 ? { opacity: 0 }
-                : { opacity: 0, y: -6, scale: 0.96 }
+                : { opacity: 0, transform: "translateY(-6px) scale(0.96)" }
             }
-            animate={{ opacity: 1, y: 0, scale: 1 }}
+            animate={{ opacity: 1, transform: "translateY(0px) scale(1)" }}
             exit={
               reducedMotion
                 ? { opacity: 0 }
-                : { opacity: 0, y: -4, scale: 0.98 }
+                : { opacity: 0, transform: "translateY(-4px) scale(0.98)" }
             }
             transition={{
               duration: reducedMotion ? 0.16 : 0.24,
-              ease: [0.22, 1, 0.36, 1],
+              ease: [0.23, 1, 0.32, 1],
             }}
             style={{ transformOrigin: "top left" }}
             className="absolute left-0 top-[calc(100%+6px)] z-30

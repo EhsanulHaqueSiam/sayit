@@ -38,10 +38,12 @@ export function Toaster({ toasts, onDismiss }: Props) {
           return (
             <motion.div
               key={t.id}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
+              // Full transform string is GPU-composited; Motion y shorthand
+              // runs on the main thread and drops frames under load.
+              initial={{ opacity: 0, transform: "translateY(16px)" }}
+              animate={{ opacity: 1, transform: "translateY(0px)" }}
+              exit={{ opacity: 0, transform: "translateY(-6px)" }}
+              transition={{ duration: 0.28, ease: [0.23, 1, 0.32, 1] }}
               className="pointer-events-auto flex flex-col gap-1.5
                          min-w-[260px] max-w-[min(520px,calc(100vw-2rem))]
                          px-4 py-3 rounded-md

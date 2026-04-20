@@ -34,7 +34,7 @@ export function Keycap({ pressed, disabled, label = "Space", size = "lg", meter 
 
       <motion.div
         role="presentation"
-        animate={pressed ? { y: 1, scale: 0.985 } : { y: 0, scale: 1 }}
+        animate={pressed ? { y: 2, scale: 0.97 } : { y: 0, scale: 1 }}
         transition={{ type: "spring", stiffness: 500, damping: 26 }}
         className={cn(
           "relative inline-flex items-center justify-center gap-3 px-6 py-3",

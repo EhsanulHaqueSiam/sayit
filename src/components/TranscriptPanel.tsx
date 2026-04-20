@@ -511,10 +511,13 @@ export const TranscriptPanel = memo(
               "text-[var(--color-ink)]",
               // While listening, the editor fills the viewport so dictation
               // feels immersive; otherwise a sensible content-sized min-height.
+              // 560ms matches the Stage wordmark morph so the transcript
+              // finishes rising exactly as the wordmark lands in its focus-
+              // strip position — a single coordinated gesture, not a race.
               listening
                 ? "min-h-[calc(100vh-260px)] md:min-h-[calc(100vh-240px)]"
                 : "min-h-[320px] md:min-h-[420px]",
-              "transition-[min-height] duration-[380ms]",
+              "transition-[min-height] duration-[560ms]",
               "[transition-timing-function:cubic-bezier(0.16,1,0.3,1)]",
             )}
           >

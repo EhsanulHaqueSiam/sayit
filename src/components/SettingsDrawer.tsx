@@ -129,18 +129,21 @@ export function SettingsDrawer({ open, settings, onClose, onChange }: Props) {
                        bg-[var(--color-paper)]
                        border-l border-[var(--color-line)]
                        flex flex-col"
-            initial={{ x: 40, opacity: 0 }}
-            animate={{ x: 0, opacity: 1 }}
+            // Motion's `x` shorthand uses rAF on the main thread — under
+            // load, the drawer slide would drop frames. Full transform
+            // string keeps the animation GPU-composited.
+            initial={{ transform: "translateX(40px)", opacity: 0 }}
+            animate={{ transform: "translateX(0px)", opacity: 1 }}
             exit={{
-              x: 40,
+              transform: "translateX(40px)",
               opacity: 0,
               transition: {
-                duration: 0.2,
+                duration: 0.22,
                 ease: EASE_IN_QUART,
               },
             }}
             transition={{
-              duration: reduced ? 0.18 : 0.28,
+              duration: reduced ? 0.2 : 0.3,
               ease: EASE_OUT_QUART,
             }}
           >

@@ -353,6 +353,30 @@ export default function App() {
   const spaceFromEditableRef = useRef(false);
   const [spaceHeld, setSpaceHeld] = useState(false);
 
+  // Morph window — while the wordmark's shared-layout animation is
+  // running, pause any CSS keyframe transforms on the wordmark (breathe
+  // etc.) so they don't fight Motion's layout interpolation. The window
+  // opens on every listening/spaceHeld flip and closes after the spring
+  // has had time to settle (~620ms covers the 550ms spring + slack).
+  const morphClassTimerRef = useRef<number | null>(null);
+  useEffect(() => {
+    document.body.classList.add("is-morphing");
+    if (morphClassTimerRef.current !== null) {
+      window.clearTimeout(morphClassTimerRef.current);
+    }
+    morphClassTimerRef.current = window.setTimeout(() => {
+      document.body.classList.remove("is-morphing");
+      morphClassTimerRef.current = null;
+    }, 620);
+    return () => {
+      if (morphClassTimerRef.current !== null) {
+        window.clearTimeout(morphClassTimerRef.current);
+        morphClassTimerRef.current = null;
+      }
+      document.body.classList.remove("is-morphing");
+    };
+  }, [listening, spaceHeld]);
+
   const insertSpaceIntoActiveEditor = useCallback(() => {
     const active = document.activeElement;
     if (!(active instanceof HTMLElement) || !active.isContentEditable) return;

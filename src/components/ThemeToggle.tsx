@@ -28,10 +28,12 @@ export function ThemeToggle({ theme, onCycle }: Props) {
         <AnimatePresence mode="wait" initial={false}>
           <motion.span
             key={`icon-${key}`}
-            initial={{ opacity: 0, rotate: -25, scale: 0.7 }}
+            // 0.86 instead of 0.7 — nothing in the real world pops from
+            // near-zero. The icon should feel like it's settling, not erupting.
+            initial={{ opacity: 0, rotate: -25, scale: 0.86 }}
             animate={{ opacity: 1, rotate: 0, scale: 1 }}
-            exit={{ opacity: 0, rotate: 25, scale: 0.7 }}
-            transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+            exit={{ opacity: 0, rotate: 25, scale: 0.86 }}
+            transition={{ duration: 0.24, ease: [0.23, 1, 0.32, 1] }}
             className="absolute inline-flex items-center justify-center"
           >
             <Icon size={14} strokeWidth={1.6} />
@@ -42,10 +44,10 @@ export function ThemeToggle({ theme, onCycle }: Props) {
         <AnimatePresence mode="wait" initial={false}>
           <motion.span
             key={`label-${key}`}
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+            initial={{ opacity: 0, transform: "translateY(6px)" }}
+            animate={{ opacity: 1, transform: "translateY(0px)" }}
+            exit={{ opacity: 0, transform: "translateY(-6px)" }}
+            transition={{ duration: 0.22, ease: [0.23, 1, 0.32, 1] }}
             className="inline-block"
           >
             {label}

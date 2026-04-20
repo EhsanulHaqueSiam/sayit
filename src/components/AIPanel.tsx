@@ -154,18 +154,19 @@ export function AIPanel({
             {moreOpen && (
               <motion.div
                 role="menu"
+                // HW-accelerated transform string for the popover entrance.
                 initial={
                   reducedMotion
                     ? { opacity: 0 }
-                    : { opacity: 0, y: -6, scale: 0.96 }
+                    : { opacity: 0, transform: "translateY(-6px) scale(0.96)" }
                 }
-                animate={{ opacity: 1, y: 0, scale: 1 }}
+                animate={{ opacity: 1, transform: "translateY(0px) scale(1)" }}
                 exit={
                   reducedMotion
                     ? { opacity: 0 }
-                    : { opacity: 0, y: -4, scale: 0.98 }
+                    : { opacity: 0, transform: "translateY(-4px) scale(0.98)" }
                 }
-                transition={{ duration: reducedMotion ? 0.16 : 0.26, ease: [0.22, 1, 0.36, 1] }}
+                transition={{ duration: reducedMotion ? 0.16 : 0.26, ease: [0.23, 1, 0.32, 1] }}
                 style={{ transformOrigin: "top right" }}
                 className="absolute right-0 top-[calc(100%+6px)] z-30
                            min-w-[240px] py-2
@@ -262,7 +263,9 @@ export function AIPanel({
           >
             <motion.span
               aria-hidden
-              initial={reducedMotion ? false : { opacity: 0, scale: 0.8 }}
+              // 0.9 instead of 0.8 — the em-dash should feel like it
+              // emerges, not like it erupts from a point.
+              initial={reducedMotion ? false : { opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{
                 duration: reducedMotion ? 0.2 : 0.44,
