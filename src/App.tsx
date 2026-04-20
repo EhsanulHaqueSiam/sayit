@@ -7,12 +7,12 @@ import { AIPanel } from "@/components/AIPanel";
 import { SettingsDrawer } from "@/components/SettingsDrawer";
 import { Toaster } from "@/components/Toaster";
 import { UnsupportedNotice } from "@/components/UnsupportedNotice";
-import { useLocalStorage, usePersistentString } from "@/hooks/useLocalStorage";
+import { useLocalStorage } from "@/hooks/useLocalStorage";
 import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
 import { useListenTimer } from "@/hooks/useListenTimer";
 import { useAudioMeter } from "@/hooks/useAudioMeter";
 import { useToasts } from "@/hooks/useToasts";
-import { INITIAL_SETTINGS, STORAGE_SETTINGS, STORAGE_TRANSCRIPT } from "@/lib/constants";
+import { INITIAL_SETTINGS, STORAGE_SETTINGS } from "@/lib/constants";
 import { resolvePresetPrompt } from "@/lib/presets";
 import { callAI } from "@/lib/ai";
 import { detectSupport } from "@/lib/browser";
@@ -21,7 +21,6 @@ import type { PresetKey, Settings, Theme } from "@/types";
 const THEME_ORDER: Theme[] = ["", "dark", "light"];
 const NOTICE_DISMISSED_KEY = "sayit.unsupported-dismissed.v1";
 const LIVE_TRANSLATE_DEBOUNCE_MS = 180;
-const SPACE_TAP_INSERT_MS = 140;
 
 interface RunAIOptions {
   promptForTranslateTarget?: boolean;
@@ -36,7 +35,7 @@ export default function App() {
     STORAGE_SETTINGS,
     INITIAL_SETTINGS,
   );
-  const [transcript, setTranscript] = usePersistentString(STORAGE_TRANSCRIPT, "");
+  const [transcript, setTranscript] = useState("");
   const [aiOutput, setAIOutput] = useState("");
   const transcriptApiRef = useRef<TranscriptPanelHandle>(null);
   const [runningPreset, setRunningPreset] = useState<PresetKey | null>(null);
@@ -227,6 +226,7 @@ export default function App() {
       transcriptApiRef.current?.appendFinal(trailingInterim);
     }
     transcriptApiRef.current?.clearInterim();
+    transcriptApiRef.current?.releaseInsertionAnchor();
     interimRef.current = "";
     clearLiveTranslateTimer();
     const s = settingsRef.current;
@@ -297,7 +297,7 @@ export default function App() {
   // Space right after picking a language still works. Also enabled over
   // contenteditable so cursor-position dictation works while editing text.
   const spaceHeldRef = useRef(false);
-  const spacePressStartedAtRef = useRef<number | null>(null);
+  const spacePendingRef = useRef<{ fromEditable: boolean } | null>(null);
   const spaceFromEditableRef = useRef(false);
   const [spaceHeld, setSpaceHeld] = useState(false);
 
@@ -350,32 +350,41 @@ export default function App() {
       if (!canDictate) return;
 
       e.preventDefault();
-      if (spaceHeldRef.current || listening) return;
-      spaceFromEditableRef.current = fromEditable;
-      spacePressStartedAtRef.current = Date.now();
-      spaceHeldRef.current = true;
-      setSpaceHeld(true);
-      start();
+      // If currently held-dictating, keep consuming repeats.
+      if (spaceHeldRef.current) return;
+
+      // Start dictation only on repeat => actual "hold", not tap.
+      if (e.repeat) {
+        if (listening) return;
+        spacePendingRef.current = null;
+        transcriptApiRef.current?.captureInsertionAnchor();
+        spaceHeldRef.current = true;
+        setSpaceHeld(true);
+        start();
+        return;
+      }
+
+      // Initial keydown: mark as pending tap/hold decision.
+      if (!listening) {
+        spacePendingRef.current = { fromEditable };
+        spaceFromEditableRef.current = fromEditable;
+      }
     };
 
     const onKeyUp = (e: KeyboardEvent) => {
       if (!isSpaceKey(e)) return;
-      if (!spaceHeldRef.current && spacePressStartedAtRef.current === null) return;
+      if (!spaceHeldRef.current && !spacePendingRef.current) return;
       e.preventDefault();
-      const startedAt = spacePressStartedAtRef.current;
-      spacePressStartedAtRef.current = null;
+      const wasHolding = spaceHeldRef.current;
       if (spaceHeldRef.current) {
         spaceHeldRef.current = false;
         setSpaceHeld(false);
         stop();
       }
-      if (
-        spaceFromEditableRef.current &&
-        startedAt !== null &&
-        Date.now() - startedAt <= SPACE_TAP_INSERT_MS
-      ) {
+      if (!wasHolding && spacePendingRef.current?.fromEditable) {
         insertSpaceIntoActiveEditor();
       }
+      spacePendingRef.current = null;
       spaceFromEditableRef.current = false;
     };
 
@@ -397,7 +406,7 @@ export default function App() {
   // If the window loses focus mid-hold (alt-tab, etc.), clear state.
   useEffect(() => {
     const blur = () => {
-      spacePressStartedAtRef.current = null;
+      spacePendingRef.current = null;
       spaceFromEditableRef.current = false;
       if (spaceHeldRef.current) {
         spaceHeldRef.current = false;

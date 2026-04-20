@@ -12,6 +12,10 @@ import { InlineLanguage } from "./InlineLanguage";
 import { cn, countWords, formatDuration, tsFilename, downloadText } from "@/lib/utils";
 
 export interface TranscriptPanelHandle {
+  /** Freeze insertion to current cursor/selection for this dictation session. */
+  captureInsertionAnchor: () => void;
+  /** Release frozen insertion anchor after dictation ends. */
+  releaseInsertionAnchor: () => void;
   /** Insert a finalized chunk at cursor/selection directly in the DOM — no React render. */
   appendFinal: (chunk: string) => void;
   /** Update the inline ghost interim text — no React render. */
@@ -65,6 +69,7 @@ export const TranscriptPanel = memo(
     const committedRef = useRef<HTMLSpanElement>(null);
     const interimRef = useRef<HTMLSpanElement>(null);
     const lastCaretRangeRef = useRef<Range | null>(null);
+    const dictationAnchorRef = useRef<Range | null>(null);
     const onTextChangeRef = useRef(onTextChange);
 
     useEffect(() => {
@@ -131,10 +136,22 @@ export const TranscriptPanel = memo(
     useImperativeHandle(
       ref,
       () => ({
+        captureInsertionAnchor() {
+          const range = resolveInsertionRange();
+          dictationAnchorRef.current = range ? range.cloneRange() : null;
+        },
+        releaseInsertionAnchor() {
+          dictationAnchorRef.current = null;
+        },
         appendFinal(chunk) {
           const span = committedRef.current;
           if (!span) return;
-          const range = resolveInsertionRange();
+          const anchored =
+            dictationAnchorRef.current &&
+            rangeInCommitted(dictationAnchorRef.current)
+              ? dictationAnchorRef.current.cloneRange()
+              : null;
+          const range = anchored ?? resolveInsertionRange();
           if (!range) return;
           const cur = span.textContent ?? "";
           const start = textOffsetFromPoint(
@@ -154,14 +171,17 @@ export const TranscriptPanel = memo(
           range.insertNode(node);
 
           const selection = window.getSelection();
-          if (selection) {
-            const after = document.createRange();
-            after.setStartAfter(node);
-            after.collapse(true);
+          const after = document.createRange();
+          after.setStartAfter(node);
+          after.collapse(true);
+          dictationAnchorRef.current = after.cloneRange();
+          const active = document.activeElement;
+          const shouldMoveVisualCaret = active === editorRef.current;
+          if (selection && shouldMoveVisualCaret) {
             selection.removeAllRanges();
             selection.addRange(after);
-            lastCaretRangeRef.current = after.cloneRange();
           }
+          lastCaretRangeRef.current = after.cloneRange();
           const interim = interimRef.current;
           if (interim) interim.textContent = "";
           onTextChangeRef.current(span.textContent ?? "");
@@ -180,10 +200,12 @@ export const TranscriptPanel = memo(
           const i = interimRef.current;
           if (i) i.textContent = "";
           lastCaretRangeRef.current = null;
+          dictationAnchorRef.current = null;
         },
         setText(t) {
           const c = committedRef.current;
           if (c) c.textContent = t;
+          dictationAnchorRef.current = null;
           const selection = window.getSelection();
           if (c && selection) {
             const atEnd = document.createRange();
@@ -195,7 +217,7 @@ export const TranscriptPanel = memo(
           }
         },
       }),
-      [resolveInsertionRange, textOffsetFromPoint],
+      [rangeInCommitted, resolveInsertionRange, textOffsetFromPoint],
     );
 
     // One-shot hydration on mount: seed the DOM with whatever text arrived
