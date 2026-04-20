@@ -68,13 +68,25 @@ export const TranscriptPanel = memo(
     const editorRef = useRef<HTMLDivElement>(null);
     const committedRef = useRef<HTMLSpanElement>(null);
     const interimRef = useRef<HTMLSpanElement>(null);
+    const tailCaretRef = useRef<HTMLSpanElement>(null);
     const lastCaretRangeRef = useRef<Range | null>(null);
     const dictationAnchorRef = useRef<Range | null>(null);
+    const anchoredInterimRef = useRef<HTMLSpanElement | null>(null);
+    const anchoredCaretRef = useRef<HTMLSpanElement | null>(null);
+    const listeningRef = useRef(listening);
     const onTextChangeRef = useRef(onTextChange);
 
     useEffect(() => {
       onTextChangeRef.current = onTextChange;
     }, [onTextChange]);
+
+    useEffect(() => {
+      listeningRef.current = listening;
+      const anchoredCaret = anchoredCaretRef.current;
+      if (anchoredCaret) {
+        anchoredCaret.className = listening ? "caret-on" : "";
+      }
+    }, [listening]);
 
     const rangeInCommitted = useCallback((range: Range): boolean => {
       const committed = committedRef.current;
@@ -125,6 +137,43 @@ export const TranscriptPanel = memo(
       return atEnd;
     }, [rangeInCommitted]);
 
+    const setTailPreviewVisible = useCallback((visible: boolean) => {
+      const tailCaret = tailCaretRef.current;
+      if (!tailCaret) return;
+      tailCaret.style.display = visible ? "" : "none";
+      if (!visible) {
+        const i = interimRef.current;
+        if (i) i.textContent = "";
+      }
+    }, []);
+
+    const removeAnchoredPreview = useCallback(() => {
+      anchoredInterimRef.current?.remove();
+      anchoredCaretRef.current?.remove();
+    }, []);
+
+    const getAnchoredPreviewNodes = useCallback(() => {
+      if (!anchoredInterimRef.current) {
+        const node = document.createElement("span");
+        node.setAttribute("data-interim", "");
+        node.contentEditable = "false";
+        node.className = "interim-ghost";
+        anchoredInterimRef.current = node;
+      }
+      if (!anchoredCaretRef.current) {
+        const node = document.createElement("span");
+        node.setAttribute("data-caret", "");
+        node.setAttribute("aria-hidden", "true");
+        node.contentEditable = "false";
+        anchoredCaretRef.current = node;
+      }
+      anchoredCaretRef.current.className = listeningRef.current ? "caret-on" : "";
+      return {
+        interimNode: anchoredInterimRef.current,
+        caretNode: anchoredCaretRef.current,
+      };
+    }, []);
+
     useEffect(() => {
       const onSelectionChange = () => cacheCaretRange();
       document.addEventListener("selectionchange", onSelectionChange);
@@ -142,15 +191,19 @@ export const TranscriptPanel = memo(
         },
         releaseInsertionAnchor() {
           dictationAnchorRef.current = null;
+          removeAnchoredPreview();
+          setTailPreviewVisible(true);
         },
         appendFinal(chunk) {
           const span = committedRef.current;
           if (!span) return;
+          removeAnchoredPreview();
           const anchored =
             dictationAnchorRef.current &&
             rangeInCommitted(dictationAnchorRef.current)
               ? dictationAnchorRef.current.cloneRange()
               : null;
+          setTailPreviewVisible(!anchored);
           const range = anchored ?? resolveInsertionRange();
           if (!range) return;
           const cur = span.textContent ?? "";
@@ -182,24 +235,66 @@ export const TranscriptPanel = memo(
             selection.addRange(after);
           }
           lastCaretRangeRef.current = after.cloneRange();
-          const interim = interimRef.current;
-          if (interim) interim.textContent = "";
+          if (anchored) {
+            const { caretNode } = getAnchoredPreviewNodes();
+            const caretRange = dictationAnchorRef.current?.cloneRange();
+            if (caretRange) caretRange.insertNode(caretNode);
+          } else {
+            const interim = interimRef.current;
+            if (interim) interim.textContent = "";
+          }
           onTextChangeRef.current(span.textContent ?? "");
         },
         setInterim(t) {
           const i = interimRef.current;
-          if (!i) return;
-          // When dictation is anchored to a cursor position, rendering interim
-          // at the global tail causes a visual "jump to end then snap back".
-          // Hide tail interim in that mode and only commit finalized text at
-          // the anchor location.
-          if (dictationAnchorRef.current) {
-            if (i.textContent) i.textContent = "";
+          const span = committedRef.current;
+          if (!i || !span) return;
+          const anchored =
+            dictationAnchorRef.current &&
+            rangeInCommitted(dictationAnchorRef.current);
+          if (anchored) {
+            setTailPreviewVisible(false);
+            removeAnchoredPreview();
+            const anchorRange = dictationAnchorRef.current!.cloneRange();
+            const cur = span.textContent ?? "";
+            const start = textOffsetFromPoint(
+              span,
+              anchorRange.startContainer,
+              anchorRange.startOffset,
+            );
+            const left = start > 0 ? cur[start - 1] : "";
+            const needsLeadingSpace = !!left && !/\s/.test(left);
+            const { interimNode, caretNode } = getAnchoredPreviewNodes();
+            interimNode.textContent = t ? `${needsLeadingSpace ? " " : ""}${t}` : "";
+            if (t) {
+              anchorRange.insertNode(interimNode);
+              const after = document.createRange();
+              after.setStartAfter(interimNode);
+              after.collapse(true);
+              after.insertNode(caretNode);
+            } else {
+              anchorRange.insertNode(caretNode);
+            }
             return;
           }
+          removeAnchoredPreview();
+          setTailPreviewVisible(true);
           if (i.textContent !== t) i.textContent = t;
         },
         clearInterim() {
+          const anchored =
+            dictationAnchorRef.current &&
+            rangeInCommitted(dictationAnchorRef.current);
+          if (anchored) {
+            removeAnchoredPreview();
+            setTailPreviewVisible(false);
+            const anchorRange = dictationAnchorRef.current!.cloneRange();
+            const { caretNode } = getAnchoredPreviewNodes();
+            anchorRange.insertNode(caretNode);
+            return;
+          }
+          removeAnchoredPreview();
+          setTailPreviewVisible(true);
           const i = interimRef.current;
           if (i) i.textContent = "";
         },
@@ -208,6 +303,8 @@ export const TranscriptPanel = memo(
           if (c) c.textContent = "";
           const i = interimRef.current;
           if (i) i.textContent = "";
+          removeAnchoredPreview();
+          setTailPreviewVisible(true);
           lastCaretRangeRef.current = null;
           dictationAnchorRef.current = null;
         },
@@ -215,6 +312,8 @@ export const TranscriptPanel = memo(
           const c = committedRef.current;
           if (c) c.textContent = t;
           dictationAnchorRef.current = null;
+          removeAnchoredPreview();
+          setTailPreviewVisible(true);
           const selection = window.getSelection();
           if (c && selection) {
             const atEnd = document.createRange();
@@ -226,7 +325,14 @@ export const TranscriptPanel = memo(
           }
         },
       }),
-      [rangeInCommitted, resolveInsertionRange, textOffsetFromPoint],
+      [
+        getAnchoredPreviewNodes,
+        rangeInCommitted,
+        removeAnchoredPreview,
+        resolveInsertionRange,
+        setTailPreviewVisible,
+        textOffsetFromPoint,
+      ],
     );
 
     // One-shot hydration on mount: seed the DOM with whatever text arrived
@@ -342,6 +448,7 @@ export const TranscriptPanel = memo(
           />
           <span
             aria-hidden
+            ref={tailCaretRef}
             contentEditable={false}
             suppressContentEditableWarning
             data-caret
