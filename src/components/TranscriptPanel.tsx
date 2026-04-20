@@ -188,7 +188,16 @@ export const TranscriptPanel = memo(
         },
         setInterim(t) {
           const i = interimRef.current;
-          if (i && i.textContent !== t) i.textContent = t;
+          if (!i) return;
+          // When dictation is anchored to a cursor position, rendering interim
+          // at the global tail causes a visual "jump to end then snap back".
+          // Hide tail interim in that mode and only commit finalized text at
+          // the anchor location.
+          if (dictationAnchorRef.current) {
+            if (i.textContent) i.textContent = "";
+            return;
+          }
+          if (i.textContent !== t) i.textContent = t;
         },
         clearInterim() {
           const i = interimRef.current;
