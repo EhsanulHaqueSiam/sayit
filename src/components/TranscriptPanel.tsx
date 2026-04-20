@@ -97,15 +97,6 @@ export const TranscriptPanel = memo(
       );
     }, []);
 
-    const cacheCaretRange = useCallback(() => {
-      const selection = window.getSelection();
-      if (!selection || selection.rangeCount === 0) return;
-      const range = selection.getRangeAt(0);
-      if (rangeInCommitted(range)) {
-        lastCaretRangeRef.current = range.cloneRange();
-      }
-    }, [rangeInCommitted]);
-
     const textOffsetFromPoint = useCallback((
       root: Node,
       container: Node,
@@ -117,14 +108,64 @@ export const TranscriptPanel = memo(
       return r.toString().length;
     }, []);
 
+    const pointInCommittedFromCharOffset = useCallback((chars: number) => {
+      const committed = committedRef.current;
+      if (!committed) return null;
+      let remaining = Math.max(0, chars);
+      const walker = document.createTreeWalker(committed, NodeFilter.SHOW_TEXT);
+      let node = walker.nextNode() as Text | null;
+      let lastText: Text | null = null;
+      while (node) {
+        lastText = node;
+        const len = node.data.length;
+        if (remaining <= len) {
+          return { container: node as Node, offset: remaining };
+        }
+        remaining -= len;
+        node = walker.nextNode() as Text | null;
+      }
+      if (lastText) {
+        return { container: lastText as Node, offset: lastText.data.length };
+      }
+      return { container: committed as Node, offset: committed.childNodes.length };
+    }, []);
+
+    const normalizeRangeToCommitted = useCallback((range: Range): Range | null => {
+      const committed = committedRef.current;
+      const editor = editorRef.current;
+      if (!committed || !editor) return null;
+      if (rangeInCommitted(range)) return range.cloneRange();
+      if (!editor.contains(range.startContainer) || !editor.contains(range.endContainer)) {
+        return null;
+      }
+      const startChars = textOffsetFromPoint(editor, range.startContainer, range.startOffset);
+      const endChars = textOffsetFromPoint(editor, range.endContainer, range.endOffset);
+      const startPoint = pointInCommittedFromCharOffset(startChars);
+      const endPoint = pointInCommittedFromCharOffset(endChars);
+      if (!startPoint || !endPoint) return null;
+      const normalized = document.createRange();
+      normalized.setStart(startPoint.container, startPoint.offset);
+      normalized.setEnd(endPoint.container, endPoint.offset);
+      return normalized;
+    }, [pointInCommittedFromCharOffset, rangeInCommitted, textOffsetFromPoint]);
+
+    const cacheCaretRange = useCallback(() => {
+      const selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0) return;
+      const normalized = normalizeRangeToCommitted(selection.getRangeAt(0));
+      if (normalized) {
+        lastCaretRangeRef.current = normalized;
+      }
+    }, [normalizeRangeToCommitted]);
+
     const resolveInsertionRange = useCallback((): Range | null => {
       const committed = committedRef.current;
       if (!committed) return null;
 
       const selection = window.getSelection();
       if (selection && selection.rangeCount > 0) {
-        const active = selection.getRangeAt(0);
-        if (rangeInCommitted(active)) return active.cloneRange();
+        const normalized = normalizeRangeToCommitted(selection.getRangeAt(0));
+        if (normalized) return normalized;
       }
 
       if (lastCaretRangeRef.current && rangeInCommitted(lastCaretRangeRef.current)) {
@@ -135,7 +176,7 @@ export const TranscriptPanel = memo(
       atEnd.selectNodeContents(committed);
       atEnd.collapse(false);
       return atEnd;
-    }, [rangeInCommitted]);
+    }, [normalizeRangeToCommitted, rangeInCommitted]);
 
     const setTailPreviewVisible = useCallback((visible: boolean) => {
       const tailCaret = tailCaretRef.current;
