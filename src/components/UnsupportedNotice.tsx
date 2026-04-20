@@ -34,17 +34,17 @@ export function UnsupportedNotice({ reason, onDismiss, onCopied }: Props) {
     <motion.section
       role="alert"
       aria-live="polite"
-      initial={{ height: 0, opacity: 0 }}
-      animate={{ height: "auto", opacity: 1 }}
-      exit={{ height: 0, opacity: 0 }}
-      transition={{ duration: 0.22, ease: [0.2, 0.7, 0.2, 1] }}
-      className="relative border-b border-[color-mix(in_srgb,var(--color-accent)_35%,var(--color-line))]
-                 bg-[color-mix(in_srgb,var(--color-accent)_10%,var(--color-paper))]
-                 overflow-hidden"
+      initial={{ gridTemplateRows: "0fr", opacity: 0 }}
+      animate={{ gridTemplateRows: "1fr", opacity: 1 }}
+      exit={{ gridTemplateRows: "0fr", opacity: 0 }}
+      transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+      className="relative grid border-b border-[color-mix(in_srgb,var(--color-accent)_35%,var(--color-line))]
+                 bg-[color-mix(in_srgb,var(--color-accent)_10%,var(--color-paper))]"
     >
-      <div className="max-w-[1240px] mx-auto px-4 md:px-8 py-4
-                      flex items-start md:items-center gap-4
-                      flex-col md:flex-row">
+      <div className="min-h-0 overflow-hidden">
+        <div className="max-w-[1240px] mx-auto px-4 md:px-8 py-4
+                        flex items-start md:items-center gap-4
+                        flex-col md:flex-row">
         {/* Left: marker + copy */}
         <div className="flex items-start gap-3 flex-1 min-w-0">
           <span
@@ -120,6 +120,7 @@ export function UnsupportedNotice({ reason, onDismiss, onCopied }: Props) {
           >
             <X size={15} strokeWidth={1.6} />
           </button>
+        </div>
         </div>
       </div>
     </motion.section>

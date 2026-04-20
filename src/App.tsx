@@ -295,6 +295,22 @@ export default function App() {
     };
   }, [listening]);
 
+  // Pause ambient CSS animations when the tab isn't visible.
+  // CSS animations keep running in hidden tabs by default; toggling
+  // body.tab-hidden flips animation-play-state to paused so background
+  // tabs stop burning CPU on the 90s drift + 2.6s rail breath.
+  useEffect(() => {
+    const apply = () => {
+      document.body.classList.toggle("tab-hidden", document.hidden);
+    };
+    apply();
+    document.addEventListener("visibilitychange", apply);
+    return () => {
+      document.removeEventListener("visibilitychange", apply);
+      document.body.classList.remove("tab-hidden");
+    };
+  }, []);
+
   useEffect(() => {
     if (listening && !wasListeningRef.current) {
       liveTranslateSessionRef.current += 1;
@@ -529,6 +545,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex flex-col">
+      <h1 className="sr-only">SayIt — voice dictation for writers</h1>
       <Topbar
         mode={settings.mode}
         theme={settings.theme}

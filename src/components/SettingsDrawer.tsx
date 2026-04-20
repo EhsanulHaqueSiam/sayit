@@ -1,12 +1,24 @@
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Check, ChevronDown, Loader2, Lock, X } from "lucide-react";
-import { useState } from "react";
-import type { ReactNode } from "react";
+import {
+  Children,
+  cloneElement,
+  isValidElement,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
+import type { ReactElement, ReactNode } from "react";
 import type { Provider, Settings } from "@/types";
 import { LANGUAGES, languageFlag } from "@/lib/languages";
 import { DEFAULT_MODELS } from "@/lib/constants";
 import { testAIKey } from "@/lib/ai";
 import { cn } from "@/lib/utils";
+
+/** Selector for every element that can receive keyboard focus naturally. */
+const FOCUSABLE_SELECTOR =
+  'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 interface Props {
   open: boolean;
@@ -32,12 +44,69 @@ export function SettingsDrawer({ open, settings, onClose, onChange }: Props) {
     },
   });
 
+  // Dialog focus management — capture the trigger, move focus into the
+  // drawer on open, trap Tab inside the drawer, restore focus on close.
+  // Meets WCAG 2.4.3 Focus Order + Dialog best practice.
+  const panelRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    triggerRef.current =
+      (document.activeElement as HTMLElement | null) ?? null;
+
+    // Focus the first focusable element after the panel enters so the
+    // entrance transform doesn't fight the focus ring appearing.
+    const focusTimer = window.setTimeout(() => {
+      const panel = panelRef.current;
+      if (!panel) return;
+      const first = panel.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
+      first?.focus();
+    }, 120);
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Tab") return;
+      const panel = panelRef.current;
+      if (!panel) return;
+      const focusables = Array.from(
+        panel.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
+      ).filter(
+        (el) =>
+          !el.hasAttribute("disabled") && el.getAttribute("tabindex") !== "-1",
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      const active = document.activeElement as HTMLElement | null;
+      if (e.shiftKey) {
+        if (active === first || !panel.contains(active)) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else {
+        if (active === last || !panel.contains(active)) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
+    document.addEventListener("keydown", onKey);
+
+    return () => {
+      window.clearTimeout(focusTimer);
+      document.removeEventListener("keydown", onKey);
+      // Return focus to whatever opened the drawer.
+      triggerRef.current?.focus?.();
+    };
+  }, [open]);
+
   return (
     <AnimatePresence>
       {open && (
         <motion.aside
           className="fixed inset-0 z-40"
           role="dialog"
+          aria-modal="true"
           aria-label="Settings"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -55,6 +124,7 @@ export function SettingsDrawer({ open, settings, onClose, onChange }: Props) {
           />
 
           <motion.div
+            ref={panelRef}
             className="absolute right-0 top-0 bottom-0 w-[min(580px,100vw)]
                        bg-[var(--color-paper)]
                        border-l border-[var(--color-line)]
@@ -234,6 +304,8 @@ export function SettingsDrawer({ open, settings, onClose, onChange }: Props) {
                     value={settings.model}
                     placeholder={DEFAULT_MODELS[settings.provider]}
                     onChange={(e) => onChange({ model: e.target.value })}
+                    autoComplete="off"
+                    spellCheck={false}
                     className={`${inputCls} font-mono text-[13px]`}
                   />
                 </FieldRow>
@@ -257,6 +329,8 @@ export function SettingsDrawer({ open, settings, onClose, onChange }: Props) {
                       value={settings.baseUrl}
                       onChange={(e) => onChange({ baseUrl: e.target.value })}
                       placeholder="https://api.groq.com/openai/v1"
+                      autoComplete="off"
+                      spellCheck={false}
                       className={`${inputCls} font-mono text-[13px]`}
                     />
                   </FieldRow>
@@ -309,6 +383,8 @@ export function SettingsDrawer({ open, settings, onClose, onChange }: Props) {
                       onChange({ systemPrompt: e.target.value })
                     }
                     rows={6}
+                    autoComplete="off"
+                    spellCheck={false}
                     className={`${inputCls} font-mono text-xs resize-y min-h-[140px] leading-[1.55]`}
                   />
                 </FieldRow>
@@ -505,37 +581,51 @@ function APIKeyTrustControls({
         </AnimatePresence>
       </div>
 
-      {/* "Where does this go?" — disclosure with an editorial route diagram */}
+      {/* "Where does this go?" — disclosure with an editorial route diagram.
+          Uses grid-template-rows 0fr → 1fr so the collapse stays on the
+          compositor (no per-frame layout thrash the way height:auto causes). */}
       <AnimatePresence initial={false}>
         {open && (
           <motion.div
             key="disclosure"
-            initial={reduced ? { opacity: 0 } : { opacity: 0, height: 0 }}
-            animate={
-              reduced ? { opacity: 1 } : { opacity: 1, height: "auto" }
+            initial={
+              reduced
+                ? { opacity: 0 }
+                : { gridTemplateRows: "0fr", opacity: 0 }
             }
-            exit={reduced ? { opacity: 0 } : { opacity: 0, height: 0 }}
+            animate={
+              reduced
+                ? { opacity: 1 }
+                : { gridTemplateRows: "1fr", opacity: 1 }
+            }
+            exit={
+              reduced
+                ? { opacity: 0 }
+                : { gridTemplateRows: "0fr", opacity: 0 }
+            }
             transition={{
               duration: reduced ? 0.18 : 0.34,
               ease: [0.22, 1, 0.36, 1],
             }}
-            className="overflow-hidden"
+            className="grid"
           >
-            <div
-              className="mt-1 rounded-md border border-[var(--color-line)]
-                         bg-[color-mix(in_srgb,var(--color-paper-2)_60%,transparent)]
-                         px-5 py-5"
-            >
-              <RouteDiagram provider={provider} />
-              <p
-                className="mt-4 font-display italic text-[14px] leading-[1.5]
-                           text-[var(--color-ink-dim)] max-w-[52ch]"
+            <div className="min-h-0 overflow-hidden">
+              <div
+                className="mt-1 rounded-md border border-[var(--color-line)]
+                           bg-[color-mix(in_srgb,var(--color-paper-2)_60%,transparent)]
+                           px-5 py-5"
               >
-                SayIt is a static page. No backend, no relay server. Your key
-                and prompts travel straight from this browser to your chosen
-                provider over HTTPS. Revoke any time by clearing the field —
-                nothing else needs to happen.
-              </p>
+                <RouteDiagram provider={provider} />
+                <p
+                  className="mt-4 font-display italic text-[14px] leading-[1.5]
+                             text-[var(--color-ink-dim)] max-w-[52ch]"
+                >
+                  SayIt is a static page. No backend, no relay server. Your
+                  key and prompts travel straight from this browser to your
+                  chosen provider over HTTPS. Revoke any time by clearing the
+                  field — nothing else needs to happen.
+                </p>
+              </div>
             </div>
           </motion.div>
         )}
@@ -661,6 +751,9 @@ function RouteArrow({
   );
 }
 
+/** The HTML element types we inject aria-labelledby onto. */
+const LABELABLE_TAGS = new Set(["input", "select", "textarea"]);
+
 function FieldRow({
   index,
   label,
@@ -681,6 +774,36 @@ function FieldRow({
   compact?: boolean;
   children: ReactNode;
 }) {
+  const labelId = useId();
+  const descId = useId();
+
+  // Walk direct children; for each native input/select/textarea, inject
+  // aria-labelledby (and aria-describedby when a sidenote is present) so
+  // screen readers read "Mode, combobox, AI — regular streams raw words…"
+  // instead of just "combobox". Wrapping elements (e.g. the checkbox label)
+  // are passed through unchanged.
+  const associated = Children.map(children, (child) => {
+    if (!isValidElement(child)) return child;
+    const tag =
+      typeof child.type === "string" ? child.type.toLowerCase() : null;
+    if (tag && LABELABLE_TAGS.has(tag)) {
+      const childProps = (child as ReactElement<Record<string, unknown>>)
+        .props;
+      const nextProps: Record<string, unknown> = {
+        "aria-labelledby":
+          (childProps["aria-labelledby"] as string | undefined) ?? labelId,
+      };
+      if (sidenote && !childProps["aria-describedby"]) {
+        nextProps["aria-describedby"] = descId;
+      }
+      return cloneElement(
+        child as ReactElement<Record<string, unknown>>,
+        nextProps,
+      );
+    }
+    return child;
+  });
+
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-baseline gap-3 flex-wrap">
@@ -691,6 +814,7 @@ function FieldRow({
           {index}.
         </span>
         <span
+          id={labelId}
           className="font-display italic text-[19px] leading-none
                      text-[var(--color-ink)]"
         >
@@ -714,9 +838,10 @@ function FieldRow({
           </span>
         )}
       </div>
-      <div className={compact ? "pl-10" : "pl-10"}>{children}</div>
+      <div className={compact ? "pl-10" : "pl-10"}>{associated}</div>
       {sidenote && (
         <p
+          id={descId}
           className="pl-10 font-display italic text-[14px] leading-[1.5]
                      text-[var(--color-ink-faint)] max-w-[46ch]"
         >

@@ -270,6 +270,7 @@ function FocusStrip({
   meter,
   onToggle,
   canDictate,
+  spaceHeld,
 }: Props) {
   return (
     <motion.div
@@ -331,7 +332,15 @@ function FocusStrip({
                      font-mono text-[10px] uppercase tracking-[0.22em]
                      text-[var(--color-ink-faint)]"
         >
-          release <kbd>Space</kbd> to stop
+          {spaceHeld ? (
+            <>
+              release <kbd>Space</kbd> to stop
+            </>
+          ) : (
+            <>
+              click <em className="font-display not-italic">Say.</em> to stop
+            </>
+          )}
         </span>
       </div>
     </motion.div>

@@ -128,6 +128,13 @@ body.is-listening::after {
   transform: scale(1.015);
 }
 
+/* Pause the ambient drift + listening rail breath when the tab isn't
+   visible. Zero wattage on background tabs. */
+body.tab-hidden::after,
+body.tab-hidden .editor-listening-rail::before {
+  animation-play-state: paused !important;
+}
+
 /* ---------- Focus mode — while listening, non-writing surfaces recede ----- */
 /* Transcript becomes the hero; the AI output section dims and the footer
    fades out. Hover/focus on a dimmed surface restores it so the user can
@@ -366,6 +373,24 @@ body::before {
     .lift:hover,
     .lift:active {
       transition-duration: 120ms;
+      transform: none;
+    }
+  }
+
+  /* Touch-target compliance (WCAG 2.5.5 AAA) — on pure touch devices only.
+     Every .lift pill / icon / chip expands to a minimum 44 × 44 hit area;
+     menu items and options inside popovers do the same. Desktop with
+     mouse/trackpad keeps the tight editorial sizing. */
+  @media (hover: none) and (pointer: coarse) {
+    .lift,
+    [role="menuitem"],
+    [role="option"] {
+      min-height: 44px;
+      min-width: 44px;
+    }
+    /* Sticky :hover state after tap on mobile — neutralise the 1px lift
+       so buttons don't appear permanently raised after the finger lifts. */
+    .lift:hover {
       transform: none;
     }
   }
