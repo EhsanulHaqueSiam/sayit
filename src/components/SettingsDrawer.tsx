@@ -53,7 +53,7 @@ export function SettingsDrawer({ open, settings, onClose, onChange }: Props) {
             </header>
 
             <div className="flex-1 overflow-y-auto px-6 py-6 flex flex-col gap-6">
-              <Field label="Mode" hint="Regular streams words live. AI mode buffers, then sends through an LLM for grammar, tone, or translation.">
+              <Field label="Mode" hint="Regular streams raw words live. AI mode runs LLM transforms; Translate preset can update live while you speak.">
                 <select
                   value={settings.mode}
                   onChange={(e) =>
@@ -62,7 +62,7 @@ export function SettingsDrawer({ open, settings, onClose, onChange }: Props) {
                   className={inputCls}
                 >
                   <option value="regular">Regular — live, raw</option>
-                  <option value="ai">AI — buffer &amp; polish</option>
+                  <option value="ai">AI — live transform</option>
                 </select>
               </Field>
 

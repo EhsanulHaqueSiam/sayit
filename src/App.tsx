@@ -20,6 +20,15 @@ import type { PresetKey, Settings, Theme } from "@/types";
 
 const THEME_ORDER: Theme[] = ["", "dark", "light"];
 const NOTICE_DISMISSED_KEY = "sayit.unsupported-dismissed.v1";
+const LIVE_TRANSLATE_DEBOUNCE_MS = 180;
+
+interface RunAIOptions {
+  promptForTranslateTarget?: boolean;
+  showSuccessToast?: boolean;
+  showErrorToast?: boolean;
+  sourceText?: string;
+  trackRunning?: boolean;
+}
 
 export default function App() {
   const [settings, setSettings] = useLocalStorage<Settings>(
@@ -44,6 +53,13 @@ export default function App() {
   const { toasts, push } = useToasts();
   const transcriptRef = useRef(transcript);
   const settingsRef = useRef(settings);
+  const interimRef = useRef("");
+  const liveTranslateTimerRef = useRef<number | null>(null);
+  const liveTranslateInFlightRef = useRef(false);
+  const liveTranslateQueuedRef = useRef(false);
+  const lastLiveTranslateInputRef = useRef("");
+  const liveTranslateSessionRef = useRef(0);
+  const wasListeningRef = useRef(false);
 
   useEffect(() => {
     transcriptRef.current = transcript;
@@ -69,25 +85,34 @@ export default function App() {
 
   // ---- AI runner (defined before hooks that reference it) ----
   const runAI = useCallback(
-    async (preset: PresetKey) => {
-      const text = transcriptRef.current.trim();
+    async (preset: PresetKey, options: RunAIOptions = {}) => {
+      const {
+        promptForTranslateTarget = preset === "translate",
+        showSuccessToast = true,
+        showErrorToast = true,
+        sourceText,
+        trackRunning = true,
+      } = options;
+      const text = (sourceText ?? transcriptRef.current).trim();
       if (!text) {
-        push("Nothing to run — record or type something first", "info");
+        if (showErrorToast) {
+          push("Nothing to run — record or type something first", "info");
+        }
         return;
       }
       const s = settingsRef.current;
-      let translateTarget = s.translateTarget;
-      if (preset === "translate") {
+      let translateTarget = (s.translateTarget || "English").trim();
+      if (preset === "translate" && promptForTranslateTarget) {
         const target = window.prompt(
           "Translate into which language?",
-          translateTarget || "English",
+          translateTarget,
         );
         if (!target) return;
         translateTarget = target.trim();
       }
       update({ activePreset: preset, translateTarget });
       setAIError(null);
-      setRunningPreset(preset);
+      if (trackRunning) setRunningPreset(preset);
       try {
         const out = await callAI({
           provider: s.provider,
@@ -98,40 +123,115 @@ export default function App() {
           userText: text,
         });
         setAIOutput(out.trim());
-        push("Done", "ok");
+        if (showSuccessToast) push("Done", "ok");
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         setAIError(msg);
-        push(msg.slice(0, 120), "err", 2800);
+        if (showErrorToast) push(msg.slice(0, 120), "err", 2800);
       } finally {
-        setRunningPreset(null);
+        if (trackRunning) setRunningPreset(null);
       }
     },
     [push, update],
   );
 
+  const clearLiveTranslateTimer = useCallback(() => {
+    if (liveTranslateTimerRef.current !== null) {
+      window.clearTimeout(liveTranslateTimerRef.current);
+      liveTranslateTimerRef.current = null;
+    }
+  }, []);
+
+  const getLiveTranslateInput = useCallback(() => {
+    const committed = transcriptRef.current.trim();
+    const interim = interimRef.current.trim();
+    if (!interim) return committed;
+    return committed ? `${committed} ${interim}` : interim;
+  }, []);
+
+  const triggerLiveTranslate = useCallback(() => {
+    const runNext = () => {
+      const s = settingsRef.current;
+      if (s.mode !== "ai" || s.activePreset !== "translate") return;
+      const input = getLiveTranslateInput();
+      if (!input) return;
+      const dedupeKey = `${liveTranslateSessionRef.current}:${s.translateTarget}::${input}`;
+
+      if (liveTranslateInFlightRef.current) {
+        liveTranslateQueuedRef.current = true;
+        return;
+      }
+      if (dedupeKey === lastLiveTranslateInputRef.current) return;
+
+      liveTranslateInFlightRef.current = true;
+      lastLiveTranslateInputRef.current = dedupeKey;
+      void runAI("translate", {
+        promptForTranslateTarget: false,
+        showSuccessToast: false,
+        showErrorToast: false,
+        sourceText: input,
+        trackRunning: false,
+      }).finally(() => {
+        liveTranslateInFlightRef.current = false;
+        if (!liveTranslateQueuedRef.current) return;
+        liveTranslateQueuedRef.current = false;
+        const nextSettings = settingsRef.current;
+        const nextInput = getLiveTranslateInput();
+        const nextKey = `${liveTranslateSessionRef.current}:${nextSettings.translateTarget}::${nextInput}`;
+        if (nextInput && nextKey !== lastLiveTranslateInputRef.current) {
+          runNext();
+        }
+      });
+    };
+
+    runNext();
+  }, [getLiveTranslateInput, runAI]);
+
+  const scheduleLiveTranslate = useCallback(() => {
+    const s = settingsRef.current;
+    if (s.mode !== "ai" || s.activePreset !== "translate") return;
+    if (!getLiveTranslateInput()) return;
+    clearLiveTranslateTimer();
+    liveTranslateTimerRef.current = window.setTimeout(() => {
+      liveTranslateTimerRef.current = null;
+      triggerLiveTranslate();
+    }, LIVE_TRANSLATE_DEBOUNCE_MS);
+  }, [clearLiveTranslateTimer, getLiveTranslateInput, triggerLiveTranslate]);
+
   // ---- Speech recognition ----
   // Hot path: push directly into the DOM via an imperative ref so no
   // top-level React render fires per interim/final event.
-  const handleFinal = useCallback((chunk: string) => {
-    const trimmed = chunk.trim();
-    if (!trimmed) return;
-    transcriptApiRef.current?.appendFinal(trimmed);
-  }, []);
+  const handleFinal = useCallback(
+    (chunk: string) => {
+      const trimmed = chunk.trim();
+      if (!trimmed) return;
+      interimRef.current = "";
+      transcriptApiRef.current?.appendFinal(trimmed);
+      scheduleLiveTranslate();
+    },
+    [scheduleLiveTranslate],
+  );
   const handleInterim = useCallback((chunk: string) => {
+    interimRef.current = chunk;
     transcriptApiRef.current?.setInterim(chunk);
-  }, []);
+    if (chunk.trim()) scheduleLiveTranslate();
+  }, [scheduleLiveTranslate]);
   const handleSRError = useCallback(
     (err: string) => push(`Speech error: ${err}`, "err", 2400),
     [push],
   );
   const handleAutoEnd = useCallback(() => {
     transcriptApiRef.current?.clearInterim();
+    interimRef.current = "";
+    clearLiveTranslateTimer();
     const s = settingsRef.current;
     if (s.mode === "ai" && transcriptRef.current.trim()) {
-      void runAI(s.activePreset);
+      void runAI(s.activePreset, {
+        promptForTranslateTarget: false,
+        showSuccessToast: s.activePreset !== "translate",
+      });
     }
-  }, [runAI]);
+  }, [clearLiveTranslateTimer, runAI]);
 
   const dismissNotice = () => {
     setNoticeDismissed(true);
@@ -153,6 +253,39 @@ export default function App() {
 
   const { elapsed, reset: resetTimer } = useListenTimer(listening);
   const meter = useAudioMeter(listening && canDictate);
+
+  useEffect(() => {
+    if (listening && !wasListeningRef.current) {
+      liveTranslateSessionRef.current += 1;
+      lastLiveTranslateInputRef.current = "";
+      liveTranslateQueuedRef.current = false;
+    }
+    wasListeningRef.current = listening;
+  }, [listening]);
+
+  useEffect(() => {
+    if (!listening || settings.mode !== "ai" || settings.activePreset !== "translate") {
+      clearLiveTranslateTimer();
+      liveTranslateQueuedRef.current = false;
+      return;
+    }
+    scheduleLiveTranslate();
+  }, [
+    clearLiveTranslateTimer,
+    listening,
+    scheduleLiveTranslate,
+    settings.activePreset,
+    settings.mode,
+    settings.translateTarget,
+  ]);
+
+  useEffect(() => {
+    if (!listening || settings.mode !== "ai" || settings.activePreset !== "translate") return;
+    if (!transcript.trim() && !interimRef.current.trim()) return;
+    scheduleLiveTranslate();
+  }, [listening, scheduleLiveTranslate, settings.activePreset, settings.mode, transcript]);
+
+  useEffect(() => clearLiveTranslateTimer, [clearLiveTranslateTimer]);
 
   // ---- Hotkeys ----
   // Hold Space to talk, release to stop. Enabled over <select> so hitting
@@ -236,8 +369,14 @@ export default function App() {
   };
 
   const clearTranscript = () => {
+    clearLiveTranslateTimer();
+    liveTranslateQueuedRef.current = false;
+    lastLiveTranslateInputRef.current = "";
+    interimRef.current = "";
     transcriptApiRef.current?.reset();
     setTranscript("");
+    setAIOutput("");
+    setAIError(null);
     resetTimer();
   };
 
