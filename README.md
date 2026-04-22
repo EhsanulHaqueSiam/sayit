@@ -2,7 +2,22 @@
 
 Voice dictation that feels editorial. Hold `Space`, speak, get polished text.
 
+**Live:** [sayit-dictation.netlify.app](https://sayit-dictation.netlify.app)
+
 Web Speech API for live transcription (Chrome / Edge / Brave), bring your own key for AI polish via Anthropic, OpenAI, Gemini, or any OpenAI-compatible endpoint (Groq, Together, Ollama).
+
+![SayIt — light mode](docs/screenshots/hero.png)
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/hero-dark.png" alt="Dark theme" /></td>
+    <td width="50%"><img src="docs/screenshots/settings-dark.png" alt="Settings panel" /></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Dark theme — same wordmark, quieter ambient.</sub></td>
+    <td align="center"><sub>Settings drawer — mode, language, provider.</sub></td>
+  </tr>
+</table>
 
 ## Features
 
